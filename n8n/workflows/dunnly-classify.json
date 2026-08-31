@@ -1,0 +1,765 @@
+{
+  "name": "dunnly-classify",
+  "nodes": [
+    {
+      "id": "wh-classify-1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "dunnly-classify-97aa7370-c9f7-4a4e-8066-6ad57c1ce3a0",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dunnly/invoices/classify",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "aXMj4HkLU3j2VBVy",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "sheets-write-replied-1",
+      "name": "Write replied (before LLM)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "value": {
+            "id": "={{$json.body.invoiceId}}",
+            "stage": "replied",
+            "replyText": "={{$json.body.replyText}}",
+            "replyChannel": "={{ $json.body.source === 'whatsapp' ? 'whatsapp' : ($json.body.source === 'email' ? 'email' : 'manual') }}",
+            "repliedAt": "={{ $now.toISO() }}",
+            "updatedAt": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "if-empty-reply-1",
+      "name": "Reply empty?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $('Webhook').item.json.body.replyText }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "set-no-response-1",
+      "name": "Set no_response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        780,
+        -120
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "classification",
+              "type": "string",
+              "value": "no_response"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "http-classify-1",
+      "name": "LLM classify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        780,
+        120
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openRouterApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: \"openai/gpt-4o-mini\", response_format: { type: \"json_object\" }, messages: [ { role: \"system\", content: \"Classify an AR collections customer reply into exactly one of: paid, promise, dispute, no_response.\\n\\nRules:\\n- Use ONLY the customer's reply text. Do not invent facts, dates, amounts, or invoice details.\\n- Do NOT rewrite or invent reply text. Your output must be classification only.\\n- Reply with strict JSON only (no markdown): {\\\"classification\\\": string}\\n- If the reply is empty, unclear, off-topic, or silence, use no_response.\\n- paid = customer states payment already made / remitted / paid.\\n- promise = customer commits to pay (with or without a date).\\n- dispute = customer contests amount, invoice, goods, or refuses payment for cause.\\n- no_response = empty, unrelated, or cannot determine intent.\" }, { role: \"user\", content: $('Webhook').item.json.body.replyText } ] }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "openRouterApi": {
+          "id": "bDCaYQ5pU52IShxl",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "id": "code-parse-classify-1",
+      "name": "Parse classification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        120
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "if ($json.error) {\n  return { json: { classification: null, failureReason: \"LLM classify failed: \" + JSON.stringify($json.error).slice(0, 300) } };\n}\nconst content = $json.choices?.[0]?.message?.content || \"{}\";\nlet parsed = {};\ntry { parsed = JSON.parse(content); } catch (e) { parsed = {}; }\nconst allowed = [\"paid\", \"promise\", \"dispute\", \"no_response\"];\nconst cls = allowed.includes(parsed.classification) ? parsed.classification : \"no_response\";\nreturn { json: { classification: cls } };"
+      }
+    },
+    {
+      "id": "if-notify-1",
+      "name": "Should notify Teams?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "or",
+          "conditions": [
+            {
+              "leftValue": "={{$json.classification}}",
+              "rightValue": "dispute",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "={{$json.classification}}",
+              "rightValue": "promise",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "={{$json.classification}}",
+              "rightValue": "paid",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "={{$json.classification}}",
+              "rightValue": "no_response",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "http-teams-1",
+      "name": "Notify Teams",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2600,
+        -160
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhookUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload || { text: $json.text, invoiceId: $('Webhook').item.json.body.invoiceId, classification: $json.classification, teamsChannel: $json.channelLabel }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "sheets-write-notified-1",
+      "name": "Write notified",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2860,
+        -100
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "value": {
+            "id": "={{ $('Webhook').item.json.body.invoiceId }}",
+            "stage": "notified",
+            "classification": "={{ $('Should notify Teams?').item.json.classification }}",
+            "failureReason": "",
+            "updatedAt": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "sheets-write-classified-1",
+      "name": "Write classified",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1820,
+        100
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "value": {
+            "id": "={{ $('Webhook').item.json.body.invoiceId }}",
+            "stage": "classified",
+            "classification": "={{$json.classification}}",
+            "failureReason": "",
+            "updatedAt": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "sheets-log-classification-1",
+      "name": "Log classification",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        3120,
+        0
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "classification_log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISO() }}",
+            "id": "={{ $('Webhook').item.json.body.invoiceId }}",
+            "replyText": "={{ $('Webhook').item.json.body.replyText }}",
+            "classification": "={{ $json.classification || $('Should notify Teams?').item.json.classification || '' }}",
+            "notified": "={{ ['dispute','promise','paid','no_response'].includes($('Should notify Teams?').item.json.classification || '') }}"
+          },
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "replyText",
+              "displayName": "replyText",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "classification",
+              "displayName": "classification",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "notified",
+              "displayName": "notified",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ]
+        },
+        "options": {
+          "useAppend": true
+        }
+      },
+      "continueOnFail": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "sheets-final-read-3",
+      "name": "Read final",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2600,
+        0
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "id",
+              "lookupValue": "={{$('Webhook').item.json.body.invoiceId}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "code-normalize-4",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const r = $json;\nfunction istYmd(asOf) {\n  const d = asOf || new Date();\n  return new Intl.DateTimeFormat(\"en-CA\", {\n    timeZone: \"Asia/Kolkata\",\n    year: \"numeric\",\n    month: \"2-digit\",\n    day: \"2-digit\",\n  }).format(d);\n}\nfunction parseSupplyDate(raw) {\n  if (raw == null || raw === \"\") return null;\n  if (typeof raw === \"number\" && Number.isFinite(raw)) {\n    const ms = Math.round((raw - 25569) * 86400 * 1000);\n    const d = new Date(ms);\n    if (!Number.isFinite(d.getTime())) return null;\n    return d.toISOString().slice(0, 10);\n  }\n  const s = String(raw).trim().replace(/^'/, \"\");\n  if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s.slice(0, 10);\n  const dmy = s.match(/^(\\d{1,2})[\\/\\-.](\\d{1,2})[\\/\\-.](\\d{4})$/);\n  if (dmy) {\n    return dmy[3] + \"-\" + dmy[2].padStart(2, \"0\") + \"-\" + dmy[1].padStart(2, \"0\");\n  }\n  const t = Date.parse(s);\n  if (Number.isFinite(t)) return new Date(t).toISOString().slice(0, 10);\n  return null;\n}\nfunction addCalendarDays(ymd, days) {\n  const parts = ymd.split(\"-\").map(Number);\n  const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));\n  dt.setUTCDate(dt.getUTCDate() + days);\n  return dt.toISOString().slice(0, 10);\n}\nfunction diffCalendarDays(laterYmd, earlierYmd) {\n  const a = laterYmd.split(\"-\").map(Number);\n  const b = earlierYmd.split(\"-\").map(Number);\n  return Math.round((Date.UTC(a[0], a[1] - 1, a[2]) - Date.UTC(b[0], b[1] - 1, b[2])) / 86400000);\n}\nfunction pickSupplyCredit(r) {\n  const dateOfSupply = r.dateOfSupply ?? r[\"Date of Supply\"] ?? r.DateOfSupply ?? r.date_of_supply ?? null;\n  const creditDays = r.creditDays ?? r.creditLine ?? r[\"Credit Line\"] ?? r[\"Credit Days\"] ?? r.credit_days ?? null;\n  return { dateOfSupply, creditDays };\n}\nfunction deriveOverdue(r) {\n  const picked = pickSupplyCredit(r);\n  const supply = parseSupplyDate(picked.dateOfSupply);\n  const creditRaw = picked.creditDays;\n  const credit = creditRaw === \"\" || creditRaw == null ? null : Number(creditRaw);\n  if (supply != null && credit != null && Number.isFinite(credit) && credit >= 0) {\n    const dueDate = addCalendarDays(supply, Math.floor(credit));\n    const today = istYmd(new Date());\n    return {\n      dateOfSupply: supply,\n      creditDays: Math.floor(credit),\n      dueDate,\n      daysOverdue: Math.max(0, diffCalendarDays(today, dueDate)),\n    };\n  }\n  const stored = Number(r.daysOverdue || 0);\n  return {\n    dateOfSupply: supply,\n    creditDays: credit != null && Number.isFinite(credit) ? Math.floor(credit) : null,\n    dueDate: null,\n    daysOverdue: Number.isFinite(stored) ? Math.max(0, Math.floor(stored)) : 0,\n  };\n}\nfunction truthy(v) {\n  if (typeof v === \"boolean\") return v;\n  if (typeof v === \"number\") return v !== 0;\n  if (typeof v === \"string\") {\n    const s = v.trim().toUpperCase();\n    return s === \"TRUE\" || s === \"1\" || s === \"YES\";\n  }\n  return false;\n}\nconst overdue = deriveOverdue(r);\nconst invoice = {\n  id: String(r.id || \"\"),\n  customer: String(r.customer || \"\"),\n  email: String(r.email || \"\"),\n  phone: String(r.phone || \"\").replace(/^'/, \"\"),\n  amountDue: Number(r.amountDue || 0),\n  amountRemaining: Number(r.amountRemaining || 0),\n  dateOfSupply: overdue.dateOfSupply,\n  creditDays: overdue.creditDays,\n  dueDate: overdue.dueDate,\n  daysOverdue: overdue.daysOverdue,\n  stage: r.stage || \"queued\",\n  classification: r.classification || null,\n  replyText: r.repliedAt ? (r.replyText || \"\") : null,\n  failureReason: r.failureReason || null,\n  draftEmail: r.draftEmail || null,\n  draftWhatsapp: r.draftWhatsapp || null,\n  updatedAt: r.updatedAt || new Date().toISOString(),\n  waStatus: r.waStatus || null,\n  waOptIn: truthy(r.waOptIn),\n  waOptOut: truthy(r.waOptOut),\n};\nif (invoice.stage === \"failed\") {\n  return { json: { ok: false, step: \"notify\", failureReason: invoice.failureReason, invoice } };\n}\nreturn { json: { ok: true, invoice } };"
+      }
+    },
+    {
+      "id": "respond-4",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3120,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "sheets-read-invoice-notify-1",
+      "name": "Read invoice for notify",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1820,
+        -100
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "id",
+              "lookupValue": "={{$('Webhook').item.json.body.invoiceId}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "code-resolve-teams-1",
+      "name": "Resolve Teams targets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        -100
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const cls = $('Should notify Teams?').item.json.classification;\nconst inv = $('Read invoice for notify').item.json;\nconst wh = $('Webhook').item.json.body;\nconst invoiceId = wh.invoiceId;\nconst replyText = String(wh.replyText || '').slice(0, 200);\nconst customer = String(inv.customer || inv.Customer || '').slice(0, 120);\nconst now = new Date().toISOString();\n\nfunction env(name) {\n  try {\n    if (typeof $env !== 'undefined' && $env[name]) return String($env[name]).trim();\n  } catch (e) {}\n  try {\n    if (typeof process !== 'undefined' && process.env && process.env[name]) return String(process.env[name]).trim();\n  } catch (e) {}\n  return '';\n}\nfunction pickUrl(primary, fallback) {\n  const p = env(primary);\n  const f = env(fallback);\n  return p || f;\n}\nconst escalations = pickUrl('TEAMS_WEBHOOK_ESCALATIONS', 'TEAMS_INCOMING_WEBHOOK_URL');\nconst disputes = pickUrl('TEAMS_WEBHOOK_DISPUTES', 'TEAMS_INCOMING_WEBHOOK_URL');\nconst payments = pickUrl('TEAMS_WEBHOOK_PAYMENTS', 'TEAMS_INCOMING_WEBHOOK_URL');\n\nfunction istYmd(asOf) {\n  const d = asOf || new Date();\n  return new Intl.DateTimeFormat('en-CA', {\n    timeZone: 'Asia/Kolkata',\n    year: 'numeric',\n    month: '2-digit',\n    day: '2-digit',\n  }).format(d);\n}\nfunction parseSupplyDate(raw) {\n  if (raw == null || raw === '') return null;\n  if (typeof raw === 'number' && Number.isFinite(raw)) {\n    const ms = Math.round((raw - 25569) * 86400 * 1000);\n    const d = new Date(ms);\n    if (!Number.isFinite(d.getTime())) return null;\n    return d.toISOString().slice(0, 10);\n  }\n  const s = String(raw).trim().replace(/^'/, '');\n  if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s.slice(0, 10);\n  const dmy = s.match(/^(\\d{1,2})[\\/\\-.](\\d{1,2})[\\/\\-.](\\d{4})$/);\n  if (dmy) return dmy[3] + '-' + dmy[2].padStart(2, '0') + '-' + dmy[1].padStart(2, '0');\n  const t = Date.parse(s);\n  if (Number.isFinite(t)) return new Date(t).toISOString().slice(0, 10);\n  return null;\n}\nfunction addCalendarDays(ymd, days) {\n  const parts = ymd.split('-').map(Number);\n  const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));\n  dt.setUTCDate(dt.getUTCDate() + days);\n  return dt.toISOString().slice(0, 10);\n}\nfunction diffCalendarDays(laterYmd, earlierYmd) {\n  const a = laterYmd.split('-').map(Number);\n  const b = earlierYmd.split('-').map(Number);\n  return Math.round((Date.UTC(a[0], a[1] - 1, a[2]) - Date.UTC(b[0], b[1] - 1, b[2])) / 86400000);\n}\nfunction pickSupplyCredit(r) {\n  const dateOfSupply =\n    r.dateOfSupply ?? r['Date of supply'] ?? r['Date of Supply'] ?? r.DateOfSupply ?? r.date_of_supply ?? null;\n  const creditDays =\n    r.creditDays ?? r.creditLine ?? r['Credit line'] ?? r['Credit Line'] ?? r['Credit Days'] ?? r.credit_days ?? null;\n  return { dateOfSupply, creditDays };\n}\nfunction pickStoredOverdue(r) {\n  if (r.daysOverdue != null && r.daysOverdue !== '') return r.daysOverdue;\n  if (r['Days post due date '] != null && r['Days post due date '] !== '') return r['Days post due date '];\n  for (const k of Object.keys(r)) {\n    if (String(k).trim() === 'Days post due date' && r[k] != null && r[k] !== '') return r[k];\n  }\n  return 0;\n}\nfunction deriveDaysOverdue(r) {\n  const picked = pickSupplyCredit(r);\n  const supply = parseSupplyDate(picked.dateOfSupply);\n  const creditRaw = picked.creditDays;\n  const credit = creditRaw === '' || creditRaw == null ? null : Number(creditRaw);\n  if (supply != null && credit != null && Number.isFinite(credit) && credit >= 0) {\n    const dueDate = addCalendarDays(supply, Math.floor(credit));\n    const today = istYmd(new Date());\n    return Math.max(0, diffCalendarDays(today, dueDate));\n  }\n  const stored = Number(pickStoredOverdue(r) || 0);\n  return Number.isFinite(stored) ? Math.max(0, Math.floor(stored)) : 0;\n}\n\nconst daysOverdue = deriveDaysOverdue(inv);\nconst targets = [];\nif (cls === 'dispute') {\n  if (disputes) targets.push({ url: disputes, label: 'ar-disputes' });\n} else if (cls === 'promise' || cls === 'paid') {\n  if (payments) targets.push({ url: payments, label: 'ar-payments' });\n} else if (cls === 'no_response') {\n  if (escalations) targets.push({ url: escalations, label: 'ar-escalations' });\n}\n\nconst seen = new Set();\nconst items = [];\nfor (const t of targets) {\n  if (!t.url || seen.has(t.url)) continue;\n  seen.add(t.url);\n  const source = String(wh.source || 'manual');\n  let text = '**' + cls.toUpperCase() + '** [' + source + '] — Invoice ' + invoiceId + ': \"' + replyText + '\"';\n  if (t.label === 'ar-disputes') {\n    text += ' → #ar-disputes';\n    if (daysOverdue >= 60) text += ' (' + daysOverdue + 'd overdue)';\n  } else if (t.label === 'ar-payments') text += ' → #ar-payments';\n  else if (t.label === 'ar-escalations') text += ' → #ar-escalations';\n  const payload = {\n    text,\n    invoiceId,\n    customer,\n    classification: cls,\n    replyText,\n    daysOverdue,\n    stage: 'notified',\n    teamsChannel: t.label,\n    notifiedAt: now,\n    replyReceivedAt: inv.repliedAt || inv.updatedAt || now,\n  };\n  items.push({ json: { webhookUrl: t.url, channelLabel: t.label, classification: cls, daysOverdue, payload } });\n}\nif (!items.length) {\n  return [{ json: { webhookUrl: '', channelLabel: 'none', classification: cls, skipNotify: true, payload: null } }];\n}\nreturn items;"
+      }
+    },
+    {
+      "id": "if-skip-notify-1",
+      "name": "Has webhook URL?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2340,
+        -100
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.skipNotify ? 'yes' : ($json.webhookUrl ? 'no' : 'yes') }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Write replied (before LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write replied (before LLM)": {
+      "main": [
+        [
+          {
+            "node": "Reply empty?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reply empty?": {
+      "main": [
+        [
+          {
+            "node": "Set no_response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "LLM classify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM classify": {
+      "main": [
+        [
+          {
+            "node": "Parse classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set no_response": {
+      "main": [
+        [
+          {
+            "node": "Should notify Teams?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse classification": {
+      "main": [
+        [
+          {
+            "node": "Should notify Teams?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Teams": {
+      "main": [
+        [
+          {
+            "node": "Write notified",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write notified": {
+      "main": [
+        [
+          {
+            "node": "Log classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write classified": {
+      "main": [
+        [
+          {
+            "node": "Log classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log classification": {
+      "main": [
+        [
+          {
+            "node": "Read final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read final": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should notify Teams?": {
+      "main": [
+        [
+          {
+            "node": "Read invoice for notify",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Write classified",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read invoice for notify": {
+      "main": [
+        [
+          {
+            "node": "Resolve Teams targets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Teams targets": {
+      "main": [
+        [
+          {
+            "node": "Has webhook URL?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has webhook URL?": {
+      "main": [
+        [
+          {
+            "node": "Notify Teams",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Write notified",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "dunnly"
+  }
+}

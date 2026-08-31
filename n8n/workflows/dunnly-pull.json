@@ -1,0 +1,297 @@
+{
+  "name": "dunnly-pull",
+  "nodes": [
+    {
+      "id": "wh-pull-1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "dunnly-pull-1787839305552",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dunnly/invoices/pull",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "responseData": "={{ { ok: true } }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "aXMj4HkLU3j2VBVy",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "sheets-read-2",
+      "name": "Read invoices",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "filter-queued-1",
+      "name": "Only queued",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{$json.stage}}",
+              "rightValue": "queued",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "limit-1",
+      "name": "Limit",
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "maxItems": "={{ $('Webhook').item.json.body.limit || 10 }}"
+      }
+    },
+    {
+      "id": "loop-1",
+      "name": "Loop Over Items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1040,
+        0
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "http-draft-1",
+      "name": "LLM draft",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1300,
+        -80
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openRouterApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: \"openai/gpt-4o-mini\", response_format: { type: \"json_object\" }, messages: [ { role: \"system\", content: \"You are Dunnly AR's message drafter for accounts receivable collections.\\n\\nObjective: draft a polite payment-status check that asks the customer for an expected payment date (or what is blocking approval). Stay strictly on that AR collections objective.\\n\\nReply with strict JSON only (no markdown, no code fences):\\n{\\\"emailBody\\\": string, \\\"waBody\\\": string}\\n\\nRules for waBody (WhatsApp):\\n- Short professional WhatsApp text (preferably under 400 characters, hard max 600).\\n- Must mention the invoice id and that it is overdue / past due.\\n- Must ask for a payment date or status (collections CTA).\\n- Use only facts from the user message (customer, amounts, days overdue). Do not invent PO numbers, bank details, tracking numbers, delivery dates, or order status.\\n- Plain text only — no markdown, no bullet lists, no subject line.\\n- NEVER use shipping / order / fulfillment language (e.g. \\\"has shipped\\\", \\\"delivered on\\\", \\\"order of\\\", \\\"tracking\\\"). That is a different product template and is off-objective.\\n- NEVER write marketing or promotional copy.\\n\\nRules for emailBody:\\n- Professional AR email, 2–4 short paragraphs, same collections objective.\\n- Same factual and shipping-language bans as waBody.\\n\\nIf mode is redraft, produce a materially different phrasing than a typical first draft while keeping the same facts and objective.\" }, { role: \"user\", content: `Invoice ${$json.id} for ${$json.customer}. Amount due ${$json.amountDue}, remaining ${$json.amountRemaining}, ${$json.daysOverdue} days overdue. Draft a polite payment-status-check email and a short WhatsApp message.` } ] }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "openRouterApi": {
+          "id": "bDCaYQ5pU52IShxl",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "id": "code-parse-draft-1",
+      "name": "Parse draft",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        -80
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "if ($json.error) {\n  return { json: { ...$json, draftEmail: null, draftWhatsapp: null } };\n}\nconst content = $json.choices?.[0]?.message?.content || \"{}\";\nlet parsed = {};\ntry { parsed = JSON.parse(content); } catch (e) { parsed = {}; }\nreturn { json: { draftEmail: parsed.emailBody || null, draftWhatsapp: parsed.waBody || null } };"
+      }
+    },
+    {
+      "id": "sheets-update-drafted-1",
+      "name": "Write draft",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1820,
+        -80
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "value": {
+            "id": "={{ $('Loop Over Items').item.json.id }}",
+            "stage": "={{ $json.draftEmail ? 'drafted' : 'failed' }}",
+            "draftEmail": "={{ $json.draftEmail }}",
+            "draftWhatsapp": "={{ $json.draftWhatsapp }}",
+            "failureReason": "={{ $json.draftEmail ? '' : 'LLM draft failed during pull' }}",
+            "updatedAt": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Read invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read invoices": {
+      "main": [
+        [
+          {
+            "node": "Only queued",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only queued": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "LLM draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM draft": {
+      "main": [
+        [
+          {
+            "node": "Parse draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse draft": {
+      "main": [
+        [
+          {
+            "node": "Write draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write draft": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "dunnly"
+  }
+}

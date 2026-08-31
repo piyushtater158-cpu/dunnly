@@ -1,0 +1,295 @@
+{
+  "name": "dunnly-read",
+  "nodes": [
+    {
+      "id": "wh-read-1",
+      "name": "Webhook GET",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "dunnly-read",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "dunnly/invoices",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "aXMj4HkLU3j2VBVy",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "wh-sync-1",
+      "name": "Sync Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 320],
+      "webhookId": "dunnly-invoices-sync",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dunnly/invoices/sync",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "aXMj4HkLU3j2VBVy",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "code-unwrap-sync-1",
+      "name": "Unwrap sync payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 320],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const wh = $('Sync Webhook').first().json;\nconst body = wh.body || wh;\nconst invoiceRows = Array.isArray(body.invoiceRows) ? body.invoiceRows : [];\nconst rows = invoiceRows.filter((r) => r && String(r.id || '').trim() !== '');\nif (rows.length === 0) {\n  return [{ json: { id: '', customer: '', email: '', phone: '', amountDue: 0, amountRemaining: 0, stage: 'queued' } }];\n}\nreturn rows.map((r) => ({ json: r }));"
+      }
+    },
+    {
+      "id": "code-agg-inv-1",
+      "name": "Aggregate invoices",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 320],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function istYmd(asOf) {\n  const d = asOf || new Date();\n  return new Intl.DateTimeFormat(\"en-CA\", {\n    timeZone: \"Asia/Kolkata\",\n    year: \"numeric\",\n    month: \"2-digit\",\n    day: \"2-digit\",\n  }).format(d);\n}\nfunction parseSupplyDate(raw) {\n  if (raw == null || raw === \"\") return null;\n  if (typeof raw === \"number\" && Number.isFinite(raw)) {\n    const ms = Math.round((raw - 25569) * 86400 * 1000);\n    const d = new Date(ms);\n    if (!Number.isFinite(d.getTime())) return null;\n    return d.toISOString().slice(0, 10);\n  }\n  const s = String(raw).trim().replace(/^'/, \"\");\n  if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s.slice(0, 10);\n  const dmy = s.match(/^(\\d{1,2})[\\/\\-.](\\d{1,2})[\\/\\-.](\\d{4})$/);\n  if (dmy) {\n    return dmy[3] + \"-\" + dmy[2].padStart(2, \"0\") + \"-\" + dmy[1].padStart(2, \"0\");\n  }\n  const t = Date.parse(s);\n  if (Number.isFinite(t)) return new Date(t).toISOString().slice(0, 10);\n  return null;\n}\nfunction addCalendarDays(ymd, days) {\n  const parts = ymd.split(\"-\").map(Number);\n  const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));\n  dt.setUTCDate(dt.getUTCDate() + days);\n  return dt.toISOString().slice(0, 10);\n}\nfunction diffCalendarDays(laterYmd, earlierYmd) {\n  const a = laterYmd.split(\"-\").map(Number);\n  const b = earlierYmd.split(\"-\").map(Number);\n  return Math.round((Date.UTC(a[0], a[1] - 1, a[2]) - Date.UTC(b[0], b[1] - 1, b[2])) / 86400000);\n}\nfunction pickSupplyCredit(r) {\n  const dateOfSupply = r.dateOfSupply ?? r[\"Date of supply\"] ?? r[\"Date of Supply\"] ?? r.DateOfSupply ?? r.date_of_supply ?? null;\n  const creditDays = r.creditDays ?? r.creditLine ?? r[\"Credit line\"] ?? r[\"Credit Line\"] ?? r[\"Credit Days\"] ?? r.credit_days ?? null;\n  return { dateOfSupply, creditDays };\n}\nfunction deriveOverdue(r) {\n  const picked = pickSupplyCredit(r);\n  const supply = parseSupplyDate(picked.dateOfSupply);\n  const creditRaw = picked.creditDays;\n  const credit = creditRaw === \"\" || creditRaw == null ? null : Number(creditRaw);\n  if (supply != null && credit != null && Number.isFinite(credit) && credit >= 0) {\n    const dueDate = addCalendarDays(supply, Math.floor(credit));\n    const today = istYmd(new Date());\n    return {\n      dateOfSupply: supply,\n      creditDays: Math.floor(credit),\n      dueDate,\n      daysOverdue: Math.max(0, diffCalendarDays(today, dueDate)),\n    };\n  }\n  const storedRaw = r[\"Days post due date \"] ?? r.daysOverdue ?? r[\"Days post due date\"] ?? 0;\n  const stored = Number(storedRaw);\n  return {\n    dateOfSupply: supply,\n    creditDays: credit != null && Number.isFinite(credit) ? Math.floor(credit) : null,\n    dueDate: null,\n    daysOverdue: Number.isFinite(stored) ? Math.max(0, Math.floor(stored)) : 0,\n  };\n}\nfunction truthy(v) {\n  if (typeof v === \"boolean\") return v;\n  if (typeof v === \"number\") return v !== 0;\n  if (typeof v === \"string\") {\n    const s = v.trim().toUpperCase();\n    return s === \"TRUE\" || s === \"1\" || s === \"YES\";\n  }\n  return false;\n}\nconst invoices = $input.all().map(({ json: r }) => {\nconst overdue = deriveOverdue(r);\nconst invoice = {\n  id: String(r.id || \"\"),\n  customer: String(r.customer || \"\"),\n  email: String(r.email || \"\"),\n  phone: String(r.phone || \"\").replace(/^'/, \"\"),\n  amountDue: Number(r.amountDue || 0),\n  amountRemaining: Number(r.amountRemaining || 0),\n  dateOfSupply: overdue.dateOfSupply,\n  creditDays: overdue.creditDays,\n  dueDate: overdue.dueDate,\n  daysOverdue: overdue.daysOverdue,\n  stage: r.stage || \"queued\",\n  classification: r.classification || null,\n  replyText: r.repliedAt ? (r.replyText || \"\") : null,\n  replyChannel: r.replyChannel || null,\n  failureReason: r.failureReason || null,\n  draftEmail: r.draftEmail || null,\n  draftWhatsapp: r.draftWhatsapp || null,\n  updatedAt: r.updatedAt || new Date().toISOString(),\n  waStatus: r.waStatus || null,\n  waOptIn: truthy(r.waOptIn),\n  waOptOut: truthy(r.waOptOut),\n};\n  return invoice;\n});\nreturn [{ json: { invoices } }];"
+      }
+    },
+    {
+      "id": "code-normalize-ledger-1",
+      "name": "Normalize ledger",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 320],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const invoices = $('Aggregate invoices').item.json.invoices || [];\nconst wh = $('Sync Webhook').first().json;\nconst body = wh.body || wh;\nconst inboundRows = Array.isArray(body.inboundRows) ? body.inboundRows : [];\nlet inbound = [];\ntry {\n  inbound = inboundRows\n    .map((r) => {\n      if (!r || !r.sid) return null;\n      const ts = r.timestamp ? Date.parse(String(r.timestamp)) : Date.now();\n      return {\n        sid: String(r.sid || ''),\n        timestamp: Number.isFinite(ts) ? new Date(ts).toISOString() : String(r.timestamp || ''),\n        from: String(r.from || ''),\n        body: String(r.body || ''),\n        kind: String(r.kind || 'reply'),\n        suggestedInvoiceId: r.suggestedInvoiceId || null,\n        attachedInvoiceId: r.attachedInvoiceId || null,\n        status: String(r.status || 'pending').toLowerCase(),\n        messageStatus: r.messageStatus || null,\n        channel: r.channel === 'email' || r.channel === 'whatsapp' ? r.channel : null,\n      };\n    })\n    .filter((e) => e && e.status === 'pending');\n} catch (e) {\n  inbound = [];\n}\nconst syncedAt = body.syncedAt || new Date().toISOString();\nreturn [{ json: { ok: true, invoices, inbound, syncedAt } }];"
+      }
+    },
+    {
+      "id": "http-notify-dashboard-1",
+      "name": "Notify dashboard",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1040, 480],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DASHBOARD_NOTIFY_URL || '' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ syncedAt: $json.syncedAt, invoices: $json.invoices, inbound: $json.inbound }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "aXMj4HkLU3j2VBVy",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "code-save-ledger-1",
+      "name": "Save ledger cache",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 320],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const ledger = $json;\nconst staticData = $getWorkflowStaticData('global');\nstaticData.ledger = {\n  invoices: ledger.invoices || [],\n  inbound: ledger.inbound || [],\n  syncedAt: ledger.syncedAt || new Date().toISOString(),\n};\nreturn [{\n  json: {\n    ok: true,\n    syncedAt: staticData.ledger.syncedAt,\n    invoiceCount: staticData.ledger.invoices.length,\n    inboundCount: staticData.ledger.inbound.length,\n  },\n}];"
+      }
+    },
+    {
+      "id": "respond-sync-1",
+      "name": "Respond sync",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1300, 320],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "code-load-ledger-1",
+      "name": "Load ledger cache",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 0],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst ledger = staticData.ledger;\nif (!ledger || !Array.isArray(ledger.invoices)) {\n  return [{ json: { ok: false, error: 'ledger not synced yet', missing: true } }];\n}\nreturn [{\n  json: {\n    ok: true,\n    invoices: ledger.invoices,\n    inbound: ledger.inbound || [],\n    syncedAt: ledger.syncedAt || null,\n    missing: false,\n  },\n}];"
+      }
+    },
+    {
+      "id": "if-ledger-ready-1",
+      "name": "Ledger ready?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [520, 0],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.missing ? 'no' : 'yes' }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "respond-get-1",
+      "name": "Respond GET",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [780, -80],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, invoices: $json.invoices, inbound: $json.inbound } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "respond-get-empty-1",
+      "name": "Respond GET empty",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [780, 120],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, error: $json.error || 'ledger not synced yet' } }}",
+        "options": {
+          "responseCode": 503
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook GET": {
+      "main": [
+        [
+          {
+            "node": "Load ledger cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sync Webhook": {
+      "main": [
+        [
+          {
+            "node": "Unwrap sync payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unwrap sync payload": {
+      "main": [
+        [
+          {
+            "node": "Aggregate invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate invoices": {
+      "main": [
+        [
+          {
+            "node": "Normalize ledger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize ledger": {
+      "main": [
+        [
+          {
+            "node": "Save ledger cache",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save ledger cache": {
+      "main": [
+        [
+          {
+            "node": "Respond sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load ledger cache": {
+      "main": [
+        [
+          {
+            "node": "Ledger ready?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ledger ready?": {
+      "main": [
+        [
+          {
+            "node": "Respond GET",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond GET empty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "dunnly"
+  }
+}

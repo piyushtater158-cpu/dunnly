@@ -1,0 +1,98 @@
+{
+  "name": "dunnly-seed-demo-contacts",
+  "nodes": [
+    {
+      "id": "manual-1",
+      "name": "When clicking ‘Test workflow’",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": {}
+    },
+    {
+      "id": "sheets-read-1",
+      "name": "Read invoices",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [260, 0],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": { "__rl": true, "value": "invoices", "mode": "name" },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "code-1",
+      "name": "Build contact patch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 0],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const DEMO_EMAILS = [\"tooncreatives158@gmail.com\",\"piyushtater5555@gmail.com\",\"piyushjain2090@gmail.com\",\"kdfoods101@gmail.com\"];\nconst WA_DEMO_INVOICE_ID = \"INV-24245\";\nconst WA_DEMO_CUSTOMER = \"Piyush Tater Demo Co\";\nconst WA_DEMO_EMAIL = \"piyushtater5555@gmail.com\";\nconst adminPhone = \"'+91 60015 07395\";\nfunction addCalendarDays(ymd, days) {\n  const parts = ymd.split('-').map(Number);\n  const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));\n  dt.setUTCDate(dt.getUTCDate() + days);\n  return dt.toISOString().slice(0, 10);\n}\nfunction istYmd() {\n  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());\n}\nconst today = istYmd();\nconst rows = $input.all().map(({ json: r }, i) => {\n  const id = String(r.id || '');\n  const isDemo = id === WA_DEMO_INVOICE_ID;\n  const email = isDemo ? WA_DEMO_EMAIL : DEMO_EMAILS[i % DEMO_EMAILS.length];\n  let phone = String(r.phone || '').replace(/^'/, '');\n  let customer = String(r.customer || '');\n  if (isDemo) {\n    phone = adminPhone;\n    customer = WA_DEMO_CUSTOMER;\n  } else if (!phone || !phone.includes('555')) {\n    phone = \"'+1 \" + (200 + (i * 7) % 700) + \" 555 \" + String(1000 + i * 37).slice(0, 4);\n  } else if (phone.startsWith('+')) {\n    phone = \"'\" + phone;\n  }\n  let dateOfSupply = String(r.dateOfSupply || r['Date of Supply'] || '').trim();\n  let creditDays = r.creditDays ?? r['Credit Line'] ?? r.creditLine;\n  if (!dateOfSupply || creditDays === '' || creditDays == null) {\n    const credit = 30;\n    const desiredAge = isDemo ? 27 : (10 + (i * 5) % 60);\n    const due = addCalendarDays(today, -desiredAge);\n    dateOfSupply = addCalendarDays(due, -credit);\n    creditDays = credit;\n  }\n  return {\n    json: {\n      id, customer, email, phone, dateOfSupply, creditDays: String(creditDays),\n      waOptIn: isDemo ? 'TRUE' : '',\n      waOptOut: isDemo ? 'FALSE' : '',\n    },\n  };\n});\nreturn rows;"
+      }
+    },
+    {
+      "id": "sheets-update-1",
+      "name": "Update contacts",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [780, 0],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": { "__rl": true, "value": "invoices", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": ["id"],
+          "value": {
+            "id": "={{ $json.id }}",
+            "customer": "={{ $json.customer }}",
+            "email": "={{ $json.email }}",
+            "phone": "={{ $json.phone }}",
+            "dateOfSupply": "={{ $json.dateOfSupply }}",
+            "creditDays": "={{ $json.creditDays }}",
+            "waOptIn": "={{ $json.waOptIn }}",
+            "waOptOut": "={{ $json.waOptOut }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When clicking ‘Test workflow’": {
+      "main": [[{ "node": "Read invoices", "type": "main", "index": 0 }]]
+    },
+    "Read invoices": {
+      "main": [[{ "node": "Build contact patch", "type": "main", "index": 0 }]]
+    },
+    "Build contact patch": {
+      "main": [[{ "node": "Update contacts", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}

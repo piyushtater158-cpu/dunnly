@@ -1,0 +1,300 @@
+{
+  "name": "dunnly-inbound-email",
+  "nodes": [
+    {
+      "id": "wh-email-inbound-1",
+      "name": "Email inbound",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "dunnly-email-inbound",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dunnly/email/inbound",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "code-parse-email-1",
+      "name": "Parse email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 0],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const b = $json.body || $json;\nreturn {\n  json: {\n    messageId: String(b.messageId || b.id || ('EM' + Date.now())),\n    fromEmail: String(b.fromEmail || b.from || ''),\n    subject: String(b.subject || ''),\n    bodyPlain: String(b.bodyPlain || b.body || '').slice(0, 2000),\n    receivedAt: String(b.receivedAt || new Date().toISOString()),\n    now: new Date().toISOString(),\n  },\n};"
+      }
+    },
+    {
+      "id": "sheets-read-inv-email-1",
+      "name": "Read invoices",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [520, 0],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "code-match-email-1",
+      "name": "Match email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 0],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const meta = $('Parse email').item.json;\nconst SELF = 'piyushtater158@gmail.com';\nfunction normEmail(raw) {\n  const s = String(raw || '').trim().toLowerCase();\n  const m = s.match(/<([^>]+)>/);\n  return (m ? m[1] : s).trim();\n}\nconst from = normEmail(meta.fromEmail);\nif (!from || from === normEmail(SELF)) {\n  return [{ json: { ...meta, matchCount: 0, attachInvoiceId: '', matchReason: 'ignored_self', logStatus: 'pending' } }];\n}\nconst subjectInv = (meta.subject || '').match(/INV-\\d+/i);\nconst subjectId = subjectInv ? subjectInv[0].toUpperCase() : '';\nconst rows = $input.all().map(({ json: r }) => ({\n  id: String(r.id || ''),\n  email: normEmail(r.email),\n  stage: String(r.stage || '').toLowerCase(),\n  emailSentAt: String(r.emailSentAt || '').trim(),\n}));\nconst openEligible = (r) =>\n  (r.stage === 'sent' || r.stage === 'replied') &&\n  (String(r.emailSentAt || '').trim() !== '' || r.stage === 'sent');\nconst matches = rows.filter((r) => r.email && r.email === from && openEligible(r));\nlet attachInvoiceId = '';\nlet matchReason = 'unmatched';\nlet matchCount = 0;\nlet matchIds = [];\nif (matches.length === 1) {\n  matchCount = 1;\n  matchIds = [matches[0].id];\n  if (subjectId && subjectId !== matches[0].id.toUpperCase()) {\n    matchReason = 'ambiguous_subject_mismatch';\n  } else {\n    attachInvoiceId = matches[0].id;\n    matchReason = 'attached';\n  }\n} else if (matches.length > 1) {\n  matchIds = matches.map((m) => m.id);\n  matchCount = matches.length;\n  if (subjectId) {\n    const subjectMatches = matches.filter((m) => m.id.toUpperCase() === subjectId);\n    if (subjectMatches.length === 1) {\n      attachInvoiceId = subjectMatches[0].id;\n      matchReason = 'attached';\n      matchCount = 1;\n      matchIds = [subjectMatches[0].id];\n    } else {\n      matchReason = 'ambiguous_multiple';\n    }\n  } else {\n    matchReason = 'ambiguous_multiple';\n  }\n}\nreturn [{ json: {\n  ...meta,\n  matchIds,\n  matchCount,\n  attachInvoiceId,\n  matchReason,\n  logStatus: attachInvoiceId ? 'attached' : 'pending',\n  attachedInvoiceId: attachInvoiceId,\n  body: meta.bodyPlain,\n  kind: 'reply',\n  from: meta.fromEmail,\n  sid: meta.messageId,\n} }];"
+      }
+    },
+    {
+      "id": "if-email-unique-1",
+      "name": "Unique match?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1040, 0],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.attachInvoiceId ? 'yes' : 'no' }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "sheets-write-email-reply-1",
+      "name": "Write invoice replied",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1300, -80],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": ["id"],
+          "value": {
+            "id": "={{ $json.attachInvoiceId }}",
+            "stage": "replied",
+            "replyText": "={{ $json.bodyPlain }}",
+            "replyChannel": "email",
+            "repliedAt": "={{ $json.now }}",
+            "updatedAt": "={{ $json.now }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "sheets-log-email-inbound-1",
+      "name": "Log inbound",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1560, 0],
+      "continueOnFail": true,
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "inbound_log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $json.now || $now.toISO() }}",
+            "sid": "={{ $json.messageId }}",
+            "from": "={{ $json.fromEmail }}",
+            "body": "={{ $json.bodyPlain }}",
+            "kind": "reply",
+            "suggestedInvoiceId": "={{ $json.attachInvoiceId || '' }}",
+            "attachedInvoiceId": "={{ $json.attachInvoiceId || '' }}",
+            "status": "={{ $json.logStatus || 'pending' }}",
+            "messageStatus": "={{ $json.messageStatus || '' }}",
+            "channel": "email",
+            "messageId": "={{ $json.messageId }}"
+          },
+          "schema": [
+            { "id": "timestamp", "displayName": "timestamp", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "sid", "displayName": "sid", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "from", "displayName": "from", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "body", "displayName": "body", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "kind", "displayName": "kind", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "suggestedInvoiceId", "displayName": "suggestedInvoiceId", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "attachedInvoiceId", "displayName": "attachedInvoiceId", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "status", "displayName": "status", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "messageStatus", "displayName": "messageStatus", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "channel", "displayName": "channel", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "messageId", "displayName": "messageId", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "if-email-attached-1",
+      "name": "Attached reply?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1820, 0],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $('Match email').item.json.attachInvoiceId ? 'yes' : 'no' }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "http-classify-email-1",
+      "name": "Classify reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2080, -80],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.N8N_PUBLIC_WEBHOOK_BASE || 'https://n8n.piyushtater.com/webhook') + '/dunnly/invoices/classify' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ invoiceId: $('Match email').item.json.attachInvoiceId, replyText: $('Match email').item.json.bodyPlain || '', source: 'email' }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "aXMj4HkLU3j2VBVy",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "http-teams-email-pending-1",
+      "name": "Notify Teams pending",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2080, 80],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TEAMS_WEBHOOK_ESCALATIONS || $env.TEAMS_INCOMING_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: `**EMAIL INBOUND** [${$json.matchReason || 'pending'}] — ${$json.fromEmail}: \"${($json.bodyPlain || '').slice(0, 180)}\"${$json.matchCount > 1 ? ' · ambiguous identity' : ''}` }) }}"
+      }
+    },
+    {
+      "id": "respond-email-1",
+      "name": "Respond inbound",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2340, 0],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, matchReason: $json.matchReason, attachInvoiceId: $json.attachInvoiceId || '' }) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Email inbound": {
+      "main": [[{ "node": "Parse email", "type": "main", "index": 0 }]]
+    },
+    "Parse email": {
+      "main": [[{ "node": "Read invoices", "type": "main", "index": 0 }]]
+    },
+    "Read invoices": {
+      "main": [[{ "node": "Match email", "type": "main", "index": 0 }]]
+    },
+    "Match email": {
+      "main": [[{ "node": "Unique match?", "type": "main", "index": 0 }]]
+    },
+    "Unique match?": {
+      "main": [
+        [{ "node": "Write invoice replied", "type": "main", "index": 0 }],
+        [{ "node": "Log inbound", "type": "main", "index": 0 }]
+      ]
+    },
+    "Write invoice replied": {
+      "main": [[{ "node": "Log inbound", "type": "main", "index": 0 }]]
+    },
+    "Log inbound": {
+      "main": [[{ "node": "Attached reply?", "type": "main", "index": 0 }]]
+    },
+    "Attached reply?": {
+      "main": [
+        [{ "node": "Classify reply", "type": "main", "index": 0 }],
+        [{ "node": "Notify Teams pending", "type": "main", "index": 0 }]
+      ]
+    },
+    "Classify reply": {
+      "main": [[{ "node": "Respond inbound", "type": "main", "index": 0 }]]
+    },
+    "Notify Teams pending": {
+      "main": [[{ "node": "Respond inbound", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}

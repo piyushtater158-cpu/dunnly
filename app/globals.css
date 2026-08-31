@@ -1,0 +1,39 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #f2f1ec;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  color: #111110;
+  text-decoration: underline;
+}
+
+a:hover {
+  color: #b8390e;
+}
+
+textarea,
+input,
+button {
+  font-family: inherit;
+}
+
+@keyframes dunnly-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}

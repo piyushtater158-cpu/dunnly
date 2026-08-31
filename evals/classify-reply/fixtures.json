@@ -1,0 +1,50 @@
+[
+  {
+    "id": "promise-date",
+    "replyText": "I'll pay tomorrow",
+    "expected": "promise",
+    "notes": "clear payment commitment with relative date"
+  },
+  {
+    "id": "promise-friday",
+    "replyText": "Happy to pay by Friday",
+    "expected": "promise",
+    "notes": "polite promise with weekday"
+  },
+  {
+    "id": "paid-done",
+    "replyText": "Payment sent yesterday via ACH for the full balance.",
+    "expected": "paid",
+    "notes": "claims remittance already made"
+  },
+  {
+    "id": "dispute-amount",
+    "replyText": "This invoice is wrong — we only ordered half of that. Do not expect payment until corrected.",
+    "expected": "dispute",
+    "notes": "contests amount / goods"
+  },
+  {
+    "id": "no-response-empty",
+    "replyText": "",
+    "expected": "no_response",
+    "notes": "empty reply / silence path"
+  },
+  {
+    "id": "no-response-noise",
+    "replyText": "ok thanks",
+    "expected": "no_response",
+    "notes": "ambiguous acknowledgment without payment intent"
+  },
+  {
+    "id": "fidelity-unicode",
+    "replyText": "We'll remit ₹48,200 on Monday — confirm receipt please.",
+    "expected": "promise",
+    "notes": "unicode currency must round-trip exactly on screen"
+  },
+  {
+    "id": "fidelity-multiline",
+    "replyText": "Hi team,\nWe will clear INV-1 next week.\nThanks,\nAP",
+    "expected": "promise",
+    "notes": "multiline paste must project verbatim"
+  }
+]

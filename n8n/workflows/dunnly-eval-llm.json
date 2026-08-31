@@ -1,0 +1,138 @@
+{
+  "name": "dunnly-eval-llm",
+  "nodes": [
+    {
+      "id": "wh-eval-llm-1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "dunnly-eval-llm",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dunnly/eval/llm",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "aXMj4HkLU3j2VBVy",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "code-build-1",
+      "name": "Build body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 0],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const b = $json.body || $json;\nconst model = String(b.model || 'openai/gpt-4o-mini');\nconst messages = Array.isArray(b.messages) ? b.messages : [];\nif (!messages.length) {\n  return { json: { ok: false, error: 'messages required' } };\n}\nconst payload = { model, messages, temperature: b.temperature == null ? 0.2 : Number(b.temperature) };\nif (b.response_format) payload.response_format = b.response_format;\nreturn { json: { ok: true, payload } };"
+      }
+    },
+    {
+      "id": "if-ok-1",
+      "name": "Body ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [480, 0],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "http-or-1",
+      "name": "OpenRouter chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, -80],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openRouterApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {}
+      },
+      "credentials": {
+        "openRouterApi": {
+          "id": "bDCaYQ5pU52IShxl",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "id": "code-shape-1",
+      "name": "Shape response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, -80],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const j = $json;\nif (j.error) {\n  return { json: { ok: false, error: j.error } };\n}\nif (!j.choices) {\n  return { json: { ok: false, error: j.message || j.error || 'no choices from OpenRouter', rawKeys: Object.keys(j) } };\n}\nreturn { json: {\n  ok: true,\n  id: j.id || null,\n  model: j.model || null,\n  choices: j.choices,\n  usage: j.usage || null,\n} };"
+      }
+    },
+    {
+      "id": "respond-ok-1",
+      "name": "Respond ok",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1200, -80],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": { "responseCode": 200 }
+      }
+    },
+    {
+      "id": "respond-bad-1",
+      "name": "Respond bad",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [720, 120],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": { "responseCode": 400 }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Build body", "type": "main", "index": 0 }]]
+    },
+    "Build body": {
+      "main": [[{ "node": "Body ok?", "type": "main", "index": 0 }]]
+    },
+    "Body ok?": {
+      "main": [
+        [{ "node": "OpenRouter chat", "type": "main", "index": 0 }],
+        [{ "node": "Respond bad", "type": "main", "index": 0 }]
+      ]
+    },
+    "OpenRouter chat": {
+      "main": [[{ "node": "Shape response", "type": "main", "index": 0 }]]
+    },
+    "Shape response": {
+      "main": [[{ "node": "Respond ok", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}

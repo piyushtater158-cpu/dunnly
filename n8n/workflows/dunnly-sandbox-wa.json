@@ -1,0 +1,149 @@
+{
+  "name": "dunnly-sandbox-wa",
+  "nodes": [
+    {
+      "id": "wh1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "dunnly-sandbox-wa",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dunnly/sandbox/wa",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "aXMj4HkLU3j2VBVy",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "code1",
+      "name": "Build",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const b = $(\"Webhook\").item.json.body || {};\nconst toDigits = String(b.to || b.waTestRecipient || \"\").replace(/\\D/g, \"\");\nconst to = toDigits ? (\"+\" + toDigits) : \"\";\nlet from = b.from || \"whatsapp:+14155238886\";\nfrom = String(from).replace(/^whatsapp:/i, \"\");\nconst p1 = b.p1 || \"Dunnly\";\nconst p2 = b.p2 || \"INV-SANDBOX\";\nconst p3 = b.p3 || \"today\";\nconst p4 = b.p4 || \"sandbox live e2e\";\nconst body = \"Your \" + p1 + \" order of \" + p2 + \" has shipped and should be delivered on \" + p3 + \". Details: \" + p4;\nconst statusCallback = b.statusCallback || \"https://n8n.piyushtater.com/webhook/dunnly/wa/status\";\nreturn { json: { to, from, body, statusCallback } };"
+      }
+    },
+    {
+      "id": "http1",
+      "name": "Send Twilio WA",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "resource": "sms",
+        "operation": "send",
+        "from": "={{ $json.from }}",
+        "to": "={{ $json.to }}",
+        "toWhatsapp": true,
+        "message": "={{ $json.body }}",
+        "options": {
+          "statusCallback": "={{ $json.statusCallback }}"
+        }
+      },
+      "credentials": {
+        "twilioApi": {
+          "id": "REPLACE_WITH_TWILIO_API_CREDENTIAL_ID",
+          "name": "Twilio account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "code2",
+      "name": "Parse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const prior = $(\"Build\").item.json;\nconst resp = $json;\nconst ok = !!resp.sid && !resp.error;\nreturn { json: { ok, sid: resp.sid || \"\", status: resp.status || \"\", errorCode: resp.error ? \"twilio\" : \"\", errorMessage: resp.error || \"\", to: prior.to, body: prior.body } };"
+      }
+    },
+    {
+      "id": "resp1",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1040,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Build",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build": {
+      "main": [
+        [
+          {
+            "node": "Send Twilio WA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Twilio WA": {
+      "main": [
+        [
+          {
+            "node": "Parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

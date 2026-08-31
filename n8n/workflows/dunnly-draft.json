@@ -1,0 +1,526 @@
+{
+  "name": "dunnly-draft",
+  "nodes": [
+    {
+      "id": "wh-draft-1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "dunnly-draft",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dunnly/invoices/draft",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "aXMj4HkLU3j2VBVy",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "switch-mode-1",
+      "name": "Mode",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "outputKey": "save",
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.body.mode}}",
+                    "rightValue": "save",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "outputKey": "generate",
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.body.mode}}",
+                    "rightValue": "save",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEquals"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "sheets-save-1",
+      "name": "Save edits",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        520,
+        -120
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "value": {
+            "id": "={{$json.body.invoiceId}}",
+            "draftEmail": "={{$json.body.emailBody}}",
+            "draftWhatsapp": "={{$json.body.waBody}}",
+            "updatedAt": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "sheets-get-1",
+      "name": "Read invoice",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        520,
+        120
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "id",
+              "lookupValue": "={{$('Webhook').item.json.body.invoiceId}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "http-draft-2",
+      "name": "LLM draft",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        780,
+        120
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openRouterApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: \"openai/gpt-4o-mini\", response_format: { type: \"json_object\" }, messages: [ { role: \"system\", content: \"You are Dunnly AR's message drafter for accounts receivable collections.\\n\\nObjective: draft a polite payment-status check that asks the customer for an expected payment date (or what is blocking approval). Stay strictly on that AR collections objective.\\n\\nReply with strict JSON only (no markdown, no code fences):\\n{\\\"emailBody\\\": string, \\\"waBody\\\": string}\\n\\nRules for waBody (WhatsApp):\\n- Short professional WhatsApp text (preferably under 400 characters, hard max 600).\\n- Must mention the invoice id and that it is overdue / past due.\\n- Must ask for a payment date or status (collections CTA).\\n- Use only facts from the user message (customer, amounts, days overdue). Do not invent PO numbers, bank details, tracking numbers, delivery dates, or order status.\\n- Plain text only — no markdown, no bullet lists, no subject line.\\n- NEVER use shipping / order / fulfillment language (e.g. \\\"has shipped\\\", \\\"delivered on\\\", \\\"order of\\\", \\\"tracking\\\"). That is a different product template and is off-objective.\\n- NEVER write marketing or promotional copy.\\n\\nRules for emailBody:\\n- Professional AR email, 2–4 short paragraphs, same collections objective.\\n- Same factual and shipping-language bans as waBody.\\n\\nIf mode is redraft, produce a materially different phrasing than a typical first draft while keeping the same facts and objective.\" + ($('Webhook').item.json.body.mode === 'redraft' ? ' Produce a materially different phrasing than a typical first draft.' : '') }, { role: \"user\", content: `Invoice ${$json.id} for ${$json.customer}. Amount due ${$json.amountDue}, remaining ${$json.amountRemaining}, ${$json.daysOverdue} days overdue. Draft a polite payment-status-check email and a short WhatsApp message.` } ] }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "openRouterApi": {
+          "id": "bDCaYQ5pU52IShxl",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "id": "code-parse-draft-2",
+      "name": "Parse draft",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        120
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "if ($json.error) {\n  return { json: { ok: false, failureReason: \"LLM draft failed: \" + JSON.stringify($json.error).slice(0, 300) } };\n}\nconst content = $json.choices?.[0]?.message?.content || \"{}\";\nlet parsed = {};\ntry { parsed = JSON.parse(content); } catch (e) { parsed = {}; }\nif (!parsed.emailBody) {\n  return { json: { ok: false, failureReason: \"LLM draft returned no content\" } };\n}\nreturn { json: { ok: true, draftEmail: parsed.emailBody, draftWhatsapp: parsed.waBody || \"\" } };"
+      }
+    },
+    {
+      "id": "if-draft-ok-1",
+      "name": "Draft ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        120
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{$json.ok}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "sheets-update-2",
+      "name": "Write draft",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1560,
+        40
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "value": {
+            "id": "={{$('Webhook').item.json.body.invoiceId}}",
+            "stage": "={{ $('Read invoice').item.json.stage === 'queued' ? 'drafted' : $('Read invoice').item.json.stage }}",
+            "draftEmail": "={{$json.draftEmail}}",
+            "draftWhatsapp": "={{$json.draftWhatsapp}}",
+            "failureReason": "",
+            "updatedAt": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "sheets-update-fail-1",
+      "name": "Write failure",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1560,
+        220
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "value": {
+            "id": "={{$('Webhook').item.json.body.invoiceId}}",
+            "stage": "failed",
+            "failureReason": "={{$json.failureReason}}",
+            "updatedAt": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "sheets-final-read-1",
+      "name": "Read final",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2080,
+        0
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "id",
+              "lookupValue": "={{$('Webhook').item.json.body.invoiceId}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "code-normalize-2",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2340,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const r = $json;\nfunction istYmd(asOf) {\n  const d = asOf || new Date();\n  return new Intl.DateTimeFormat(\"en-CA\", {\n    timeZone: \"Asia/Kolkata\",\n    year: \"numeric\",\n    month: \"2-digit\",\n    day: \"2-digit\",\n  }).format(d);\n}\nfunction parseSupplyDate(raw) {\n  if (raw == null || raw === \"\") return null;\n  if (typeof raw === \"number\" && Number.isFinite(raw)) {\n    const ms = Math.round((raw - 25569) * 86400 * 1000);\n    const d = new Date(ms);\n    if (!Number.isFinite(d.getTime())) return null;\n    return d.toISOString().slice(0, 10);\n  }\n  const s = String(raw).trim().replace(/^'/, \"\");\n  if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s.slice(0, 10);\n  const dmy = s.match(/^(\\d{1,2})[\\/\\-.](\\d{1,2})[\\/\\-.](\\d{4})$/);\n  if (dmy) {\n    return dmy[3] + \"-\" + dmy[2].padStart(2, \"0\") + \"-\" + dmy[1].padStart(2, \"0\");\n  }\n  const t = Date.parse(s);\n  if (Number.isFinite(t)) return new Date(t).toISOString().slice(0, 10);\n  return null;\n}\nfunction addCalendarDays(ymd, days) {\n  const parts = ymd.split(\"-\").map(Number);\n  const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));\n  dt.setUTCDate(dt.getUTCDate() + days);\n  return dt.toISOString().slice(0, 10);\n}\nfunction diffCalendarDays(laterYmd, earlierYmd) {\n  const a = laterYmd.split(\"-\").map(Number);\n  const b = earlierYmd.split(\"-\").map(Number);\n  return Math.round((Date.UTC(a[0], a[1] - 1, a[2]) - Date.UTC(b[0], b[1] - 1, b[2])) / 86400000);\n}\nfunction pickSupplyCredit(r) {\n  const dateOfSupply = r.dateOfSupply ?? r[\"Date of Supply\"] ?? r.DateOfSupply ?? r.date_of_supply ?? null;\n  const creditDays = r.creditDays ?? r.creditLine ?? r[\"Credit Line\"] ?? r[\"Credit Days\"] ?? r.credit_days ?? null;\n  return { dateOfSupply, creditDays };\n}\nfunction deriveOverdue(r) {\n  const picked = pickSupplyCredit(r);\n  const supply = parseSupplyDate(picked.dateOfSupply);\n  const creditRaw = picked.creditDays;\n  const credit = creditRaw === \"\" || creditRaw == null ? null : Number(creditRaw);\n  if (supply != null && credit != null && Number.isFinite(credit) && credit >= 0) {\n    const dueDate = addCalendarDays(supply, Math.floor(credit));\n    const today = istYmd(new Date());\n    return {\n      dateOfSupply: supply,\n      creditDays: Math.floor(credit),\n      dueDate,\n      daysOverdue: Math.max(0, diffCalendarDays(today, dueDate)),\n    };\n  }\n  const stored = Number(r.daysOverdue || 0);\n  return {\n    dateOfSupply: supply,\n    creditDays: credit != null && Number.isFinite(credit) ? Math.floor(credit) : null,\n    dueDate: null,\n    daysOverdue: Number.isFinite(stored) ? Math.max(0, Math.floor(stored)) : 0,\n  };\n}\nfunction truthy(v) {\n  if (typeof v === \"boolean\") return v;\n  if (typeof v === \"number\") return v !== 0;\n  if (typeof v === \"string\") {\n    const s = v.trim().toUpperCase();\n    return s === \"TRUE\" || s === \"1\" || s === \"YES\";\n  }\n  return false;\n}\nconst overdue = deriveOverdue(r);\nconst invoice = {\n  id: String(r.id || \"\"),\n  customer: String(r.customer || \"\"),\n  email: String(r.email || \"\"),\n  phone: String(r.phone || \"\").replace(/^'/, \"\"),\n  amountDue: Number(r.amountDue || 0),\n  amountRemaining: Number(r.amountRemaining || 0),\n  dateOfSupply: overdue.dateOfSupply,\n  creditDays: overdue.creditDays,\n  dueDate: overdue.dueDate,\n  daysOverdue: overdue.daysOverdue,\n  stage: r.stage || \"queued\",\n  classification: r.classification || null,\n  replyText: r.repliedAt ? (r.replyText || \"\") : null,\n  failureReason: r.failureReason || null,\n  draftEmail: r.draftEmail || null,\n  draftWhatsapp: r.draftWhatsapp || null,\n  updatedAt: r.updatedAt || new Date().toISOString(),\n  waStatus: r.waStatus || null,\n  waOptIn: truthy(r.waOptIn),\n  waOptOut: truthy(r.waOptOut),\n};\nif (invoice.stage === \"failed\") {\n  return { json: { ok: false, step: \"draft\", failureReason: invoice.failureReason, invoice } };\n}\nreturn { json: { ok: true, invoice } };"
+      }
+    },
+    {
+      "id": "respond-2",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2600,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Mode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mode": {
+      "main": [
+        [
+          {
+            "node": "Save edits",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save edits": {
+      "main": [
+        [
+          {
+            "node": "Read final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read invoice": {
+      "main": [
+        [
+          {
+            "node": "LLM draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM draft": {
+      "main": [
+        [
+          {
+            "node": "Parse draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse draft": {
+      "main": [
+        [
+          {
+            "node": "Draft ok?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft ok?": {
+      "main": [
+        [
+          {
+            "node": "Write draft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Write failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write draft": {
+      "main": [
+        [
+          {
+            "node": "Read final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write failure": {
+      "main": [
+        [
+          {
+            "node": "Read final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read final": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "dunnly"
+  }
+}

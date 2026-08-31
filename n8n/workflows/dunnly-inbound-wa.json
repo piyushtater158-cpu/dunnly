@@ -1,0 +1,1666 @@
+{
+  "name": "dunnly-inbound-wa",
+  "nodes": [
+    {
+      "id": "wh-inbound-1",
+      "name": "WA inbound",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "dunnly-wa-inbound",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dunnly/wa/inbound",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "wh-status-1",
+      "name": "WA status",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        400
+      ],
+      "webhookId": "dunnly-wa-status",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dunnly/wa/status",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "wh-attach-1",
+      "name": "Attach webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        800
+      ],
+      "webhookId": "dunnly-inbound-attach",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dunnly/inbound/attach",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "aXMj4HkLU3j2VBVy",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "wh-ignore-1",
+      "name": "Ignore webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        1100
+      ],
+      "webhookId": "dunnly-inbound-ignore",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dunnly/inbound/ignore",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "aXMj4HkLU3j2VBVy",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "code-parse-inbound-1",
+      "name": "Parse inbound",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const j = $json.body || $json;\nconst from = String(j.From || j.from || '');\nconst body = String(j.Body || j.body || '');\nconst sid = String(j.MessageSid || j.SmsMessageSid || j.SmsSid || j.sid || ('IN' + Date.now()));\nconst digits = from.replace(/\\D/g, '');\nconst upper = body.trim().toUpperCase();\nlet kind = 'reply';\nif (/^(STOP|STOPALL|UNSUBSCRIBE|CANCEL|END|QUIT)$/.test(upper)) kind = 'stop';\nelse if (/^(START|UNSTOP)$/.test(upper) || /^JOIN\\b/.test(upper)) kind = 'start';\nelse if (upper === 'HELP') kind = 'help';\nreturn { json: { from, body, sid, digits, kind, now: new Date().toISOString() } };"
+      }
+    },
+    {
+      "id": "sheets-read-match-1",
+      "name": "Read invoices for match",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "code-match-1",
+      "name": "Match phone",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const meta = $('Parse inbound').item.json;\nconst truthy = (v) => {\n  if (typeof v === 'boolean') return v;\n  if (typeof v === 'number') return v !== 0;\n  if (typeof v === 'string') {\n    const s = v.trim().toUpperCase();\n    return s === 'TRUE' || s === '1' || s === 'YES';\n  }\n  return false;\n};\nconst rows = $input.all().map(({ json: r }) => ({\n  id: String(r.id || ''),\n  phoneDigits: String(r.phone || '').replace(/\\D/g, ''),\n  stage: String(r.stage || '').toLowerCase(),\n  waSentAt: String(r.waSentAt || '').trim(),\n  waOptIn: truthy(r.waOptIn),\n  updatedAt: r.updatedAt || '',\n}));\nconst openEligible = (r) =>\n  (r.stage === 'sent' || r.stage === 'replied') &&\n  (r.waSentAt !== '' || r.waOptIn);\nconst matches = rows.filter(\n  (r) => r.phoneDigits && r.phoneDigits === meta.digits && openEligible(r)\n);\nlet attachInvoiceId = null;\nif (matches.length === 1 && meta.kind === 'reply') {\n  attachInvoiceId = matches[0].id;\n}\nreturn [{ json: {\n  ...meta,\n  matchIds: matches.map((m) => m.id),\n  matchCount: matches.length,\n  suggestedInvoiceId: matches.length === 1 ? matches[0].id : '',\n  attachInvoiceId,\n} }];"
+      }
+    },
+    {
+      "id": "if-kind-1",
+      "name": "Kind?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1040,
+        0
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.kind }}",
+                    "rightValue": "stop",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "stop"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.kind }}",
+                    "rightValue": "start",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "start"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.kind }}",
+                    "rightValue": "reply",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "reply"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      }
+    },
+    {
+      "id": "code-stop-rows-1",
+      "name": "Stop rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        -200
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const meta = $json;\nconst ids = meta.matchIds || [];\nif (!ids.length) return [{ json: { ...meta, logStatus: 'pending', patched: 0 } }];\nreturn ids.map((id) => ({ json: { ...meta, id, waOptIn: 'FALSE', waOptOut: 'TRUE', logStatus: 'pending', patched: ids.length } }));"
+      }
+    },
+    {
+      "id": "sheets-stop-1",
+      "name": "Write STOP opt-out",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1560,
+        -200
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "value": {
+            "id": "={{ $json.id }}",
+            "waOptIn": "={{ $json.waOptIn }}",
+            "waOptOut": "={{ $json.waOptOut }}",
+            "updatedAt": "={{ $json.now }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "code-start-rows-1",
+      "name": "Start rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const meta = $json;\nconst ids = meta.matchIds || [];\nif (!ids.length) return [{ json: { ...meta, logStatus: 'pending', patched: 0 } }];\nreturn ids.map((id) => ({ json: { ...meta, id, waOptIn: 'TRUE', waOptOut: 'FALSE', logStatus: 'pending', patched: ids.length } }));"
+      }
+    },
+    {
+      "id": "sheets-start-1",
+      "name": "Write START opt-in",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1560,
+        0
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "value": {
+            "id": "={{ $json.id }}",
+            "waOptIn": "={{ $json.waOptIn }}",
+            "waOptOut": "={{ $json.waOptOut }}",
+            "updatedAt": "={{ $json.now }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "if-unique-reply-1",
+      "name": "Unique match?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.attachInvoiceId ? 'yes' : 'no' }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "sheets-attach-reply-1",
+      "name": "Auto-write reply",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1560,
+        120
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "value": {
+            "id": "={{ $json.attachInvoiceId }}",
+            "stage": "replied",
+            "replyText": "={{ $json.body }}",
+            "replyChannel": "whatsapp",
+            "repliedAt": "={{ $json.now }}",
+            "updatedAt": "={{ $json.now }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "set-attached-1",
+      "name": "Mark attached",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1820,
+        120
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "logStatus",
+              "type": "string",
+              "value": "attached"
+            },
+            {
+              "name": "attachedInvoiceId",
+              "type": "string",
+              "value": "={{ $json.attachInvoiceId }}"
+            }
+          ]
+        },
+        "includeOtherFields": true
+      }
+    },
+    {
+      "id": "set-pending-reply-1",
+      "name": "Mark pending reply",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1560,
+        280
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "logStatus",
+              "type": "string",
+              "value": "pending"
+            },
+            {
+              "name": "attachedInvoiceId",
+              "type": "string",
+              "value": ""
+            }
+          ]
+        },
+        "includeOtherFields": true
+      }
+    },
+    {
+      "id": "set-help-1",
+      "name": "Mark help/other",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1300,
+        400
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "logStatus",
+              "type": "string",
+              "value": "pending"
+            },
+            {
+              "name": "attachedInvoiceId",
+              "type": "string",
+              "value": ""
+            }
+          ]
+        },
+        "includeOtherFields": true
+      }
+    },
+    {
+      "id": "sheets-log-inbound-1",
+      "name": "Log inbound",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2100,
+        0
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "inbound_log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $json.now || $now.toISO() }}",
+            "sid": "={{ $json.sid }}",
+            "from": "={{ $json.from }}",
+            "body": "={{ $json.body }}",
+            "kind": "={{ $json.kind }}",
+            "suggestedInvoiceId": "={{ $json.suggestedInvoiceId || '' }}",
+            "attachedInvoiceId": "={{ $json.attachedInvoiceId || $json.attachInvoiceId || '' }}",
+            "status": "={{ $json.logStatus || 'pending' }}",
+            "messageStatus": "={{ $json.messageStatus || '' }}",
+            "channel": "whatsapp",
+            "messageId": "={{ $json.sid || '' }}"
+          },
+          "schema": [
+            { "id": "timestamp", "displayName": "timestamp", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "sid", "displayName": "sid", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "from", "displayName": "from", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "body", "displayName": "body", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "kind", "displayName": "kind", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "suggestedInvoiceId", "displayName": "suggestedInvoiceId", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "attachedInvoiceId", "displayName": "attachedInvoiceId", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "status", "displayName": "status", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "messageStatus", "displayName": "messageStatus", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "channel", "displayName": "channel", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "messageId", "displayName": "messageId", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "http-teams-inbound-1",
+      "name": "Notify Teams inbound",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2360,
+        0
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TEAMS_WEBHOOK_ESCALATIONS || $env.TEAMS_INCOMING_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: `**WA ${($json.kind || '').toUpperCase()}** — ${$json.from}: \"${($json.body || '').slice(0, 180)}\"${$json.attachedInvoiceId || $json.attachInvoiceId ? ' → ' + ($json.attachedInvoiceId || $json.attachInvoiceId) : ''}` }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "if-attached-reply-1",
+      "name": "Attached reply?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2280,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $('Match phone').item.json.attachInvoiceId ? 'yes' : 'no' }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "http-classify-wa-1",
+      "name": "Classify reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2540,
+        -80
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.N8N_PUBLIC_WEBHOOK_BASE || 'https://n8n.piyushtater.com/webhook') + '/dunnly/invoices/classify' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ invoiceId: $('Match phone').item.json.attachInvoiceId, replyText: $('Parse inbound').item.json.body || '', source: 'whatsapp' }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "aXMj4HkLU3j2VBVy",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "http-classify-attach-1",
+      "name": "Classify manual attach",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        680
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.N8N_PUBLIC_WEBHOOK_BASE || 'https://n8n.piyushtater.com/webhook') + '/dunnly/invoices/classify' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ invoiceId: $('Pick inbound body').item.json.invoiceId, replyText: $('Pick inbound body').item.json.body || '', source: 'whatsapp' }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "aXMj4HkLU3j2VBVy",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "respond-inbound-1",
+      "name": "Respond inbound",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2620,
+        0
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "code-parse-status-1",
+      "name": "Parse status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const j = $json.body || $json;\nconst sid = String(j.MessageSid || j.SmsSid || j.SmsMessageSid || '');\nconst messageStatus = String(j.MessageStatus || j.SmsStatus || j.MessageStatus || '');\nreturn { json: { sid, messageStatus, now: new Date().toISOString(), from: String(j.To || ''), body: '', kind: 'status' } };"
+      }
+    },
+    {
+      "id": "sheets-read-by-msgid-1",
+      "name": "Read invoices for status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        520,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "code-find-msgid-1",
+      "name": "Find by waMessageId",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const meta = $('Parse status').item.json;\nconst hit = $input.all().map(({ json: r }) => r).find((r) => String(r.waMessageId || '') === meta.sid);\nreturn [{ json: { ...meta, invoiceId: hit ? hit.id : '', found: !!hit } }];"
+      }
+    },
+    {
+      "id": "if-status-found-1",
+      "name": "Status row found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        400
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.found ? 'yes' : 'no' }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "sheets-wa-status-1",
+      "name": "Update waStatus",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1300,
+        320
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "value": {
+            "id": "={{ $json.invoiceId }}",
+            "waStatus": "={{ $json.messageStatus }}",
+            "updatedAt": "={{ $json.now }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "sheets-log-status-1",
+      "name": "Log status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1560,
+        400
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "inbound_log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $json.now }}",
+            "sid": "={{ $json.sid }}",
+            "from": "={{ $json.from || '' }}",
+            "body": "={{ $json.body || '' }}",
+            "kind": "status",
+            "suggestedInvoiceId": "={{ $json.invoiceId || '' }}",
+            "attachedInvoiceId": "={{ $json.invoiceId || '' }}",
+            "status": "attached",
+            "messageStatus": "={{ $json.messageStatus || '' }}",
+            "channel": "whatsapp",
+            "messageId": "={{ $json.sid || '' }}"
+          },
+          "schema": [
+            { "id": "timestamp", "displayName": "timestamp", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "sid", "displayName": "sid", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "from", "displayName": "from", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "body", "displayName": "body", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "kind", "displayName": "kind", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "suggestedInvoiceId", "displayName": "suggestedInvoiceId", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "attachedInvoiceId", "displayName": "attachedInvoiceId", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "status", "displayName": "status", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "messageStatus", "displayName": "messageStatus", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "channel", "displayName": "channel", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
+            { "id": "messageId", "displayName": "messageId", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "respond-status-1",
+      "name": "Respond status",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1820,
+        400
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "code-attach-api-1",
+      "name": "Parse attach",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        800
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const b = $json.body || $json;\nreturn { json: { sid: String(b.sid || ''), invoiceId: String(b.invoiceId || ''), now: new Date().toISOString() } };"
+      }
+    },
+    {
+      "id": "sheets-read-inbound-attach-1",
+      "name": "Find inbound row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        520,
+        800
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "inbound_log",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "code-pick-inbound-1",
+      "name": "Pick inbound body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        800
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const meta = $('Parse attach').item.json;\nconst hit = $input.all().map(({ json: r }) => r).find((r) => String(r.sid) === meta.sid);\nif (!hit) return [{ json: { ok: false, failureReason: 'inbound not found', sid: meta.sid } }];\nreturn [{ json: { ok: true, sid: meta.sid, invoiceId: meta.invoiceId, body: hit.body || '', from: hit.from || '', kind: hit.kind || 'reply', now: meta.now } }];"
+      }
+    },
+    {
+      "id": "sheets-attach-invoice-1",
+      "name": "Write attached reply",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1040,
+        800
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "value": {
+            "id": "={{ $json.invoiceId }}",
+            "stage": "replied",
+            "replyText": "={{ $json.body }}",
+            "replyChannel": "whatsapp",
+            "repliedAt": "={{ $json.now }}",
+            "updatedAt": "={{ $json.now }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "sheets-mark-inbound-attached-1",
+      "name": "Mark inbound attached",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1300,
+        800
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "inbound_log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "sid"
+          ],
+          "value": {
+            "sid": "={{ $json.sid }}",
+            "attachedInvoiceId": "={{ $json.invoiceId }}",
+            "status": "attached"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "sheets-read-attached-inv-1",
+      "name": "Read attached invoice",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1560,
+        800
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "id",
+              "lookupValue": "={{ $('Pick inbound body').item.json.invoiceId }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "code-respond-attach-1",
+      "name": "Respond attach body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        800
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function istYmd(asOf) {\n  const d = asOf || new Date();\n  return new Intl.DateTimeFormat(\"en-CA\", {\n    timeZone: \"Asia/Kolkata\",\n    year: \"numeric\",\n    month: \"2-digit\",\n    day: \"2-digit\",\n  }).format(d);\n}\nfunction parseSupplyDate(raw) {\n  if (raw == null || raw === \"\") return null;\n  if (typeof raw === \"number\" && Number.isFinite(raw)) {\n    const ms = Math.round((raw - 25569) * 86400 * 1000);\n    const d = new Date(ms);\n    if (!Number.isFinite(d.getTime())) return null;\n    return d.toISOString().slice(0, 10);\n  }\n  const s = String(raw).trim().replace(/^'/, \"\");\n  if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s.slice(0, 10);\n  const dmy = s.match(/^(\\d{1,2})[\\/\\-.](\\d{1,2})[\\/\\-.](\\d{4})$/);\n  if (dmy) {\n    return dmy[3] + \"-\" + dmy[2].padStart(2, \"0\") + \"-\" + dmy[1].padStart(2, \"0\");\n  }\n  const t = Date.parse(s);\n  if (Number.isFinite(t)) return new Date(t).toISOString().slice(0, 10);\n  return null;\n}\nfunction addCalendarDays(ymd, days) {\n  const parts = ymd.split(\"-\").map(Number);\n  const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));\n  dt.setUTCDate(dt.getUTCDate() + days);\n  return dt.toISOString().slice(0, 10);\n}\nfunction diffCalendarDays(laterYmd, earlierYmd) {\n  const a = laterYmd.split(\"-\").map(Number);\n  const b = earlierYmd.split(\"-\").map(Number);\n  return Math.round((Date.UTC(a[0], a[1] - 1, a[2]) - Date.UTC(b[0], b[1] - 1, b[2])) / 86400000);\n}\nfunction pickSupplyCredit(r) {\n  const dateOfSupply = r.dateOfSupply ?? r[\"Date of Supply\"] ?? r.DateOfSupply ?? r.date_of_supply ?? null;\n  const creditDays = r.creditDays ?? r.creditLine ?? r[\"Credit Line\"] ?? r[\"Credit Days\"] ?? r.credit_days ?? null;\n  return { dateOfSupply, creditDays };\n}\nfunction deriveOverdue(r) {\n  const picked = pickSupplyCredit(r);\n  const supply = parseSupplyDate(picked.dateOfSupply);\n  const creditRaw = picked.creditDays;\n  const credit = creditRaw === \"\" || creditRaw == null ? null : Number(creditRaw);\n  if (supply != null && credit != null && Number.isFinite(credit) && credit >= 0) {\n    const dueDate = addCalendarDays(supply, Math.floor(credit));\n    const today = istYmd(new Date());\n    return {\n      dateOfSupply: supply,\n      creditDays: Math.floor(credit),\n      dueDate,\n      daysOverdue: Math.max(0, diffCalendarDays(today, dueDate)),\n    };\n  }\n  const stored = Number(r.daysOverdue || 0);\n  return {\n    dateOfSupply: supply,\n    creditDays: credit != null && Number.isFinite(credit) ? Math.floor(credit) : null,\n    dueDate: null,\n    daysOverdue: Number.isFinite(stored) ? Math.max(0, Math.floor(stored)) : 0,\n  };\n}\nfunction truthy(v) {\n  if (typeof v === \"boolean\") return v;\n  if (typeof v === \"number\") return v !== 0;\n  if (typeof v === \"string\") {\n    const s = v.trim().toUpperCase();\n    return s === \"TRUE\" || s === \"1\" || s === \"YES\";\n  }\n  return false;\n}\nconst meta = $('Pick inbound body').item.json;\nconst r = $input.first().json;\nconst overdue = deriveOverdue(r);\nconst invoice = {\n  id: String(r.id || \"\"),\n  customer: String(r.customer || \"\"),\n  email: String(r.email || \"\"),\n  phone: String(r.phone || \"\").replace(/^'/, \"\"),\n  amountDue: Number(r.amountDue || 0),\n  amountRemaining: Number(r.amountRemaining || 0),\n  dateOfSupply: overdue.dateOfSupply,\n  creditDays: overdue.creditDays,\n  dueDate: overdue.dueDate,\n  daysOverdue: overdue.daysOverdue,\n  stage: r.stage || \"replied\",\n  classification: r.classification || null,\n  replyText: r.repliedAt ? (r.replyText || \"\") : null,\n  failureReason: r.failureReason || null,\n  draftEmail: r.draftEmail || null,\n  draftWhatsapp: r.draftWhatsapp || null,\n  updatedAt: r.updatedAt || new Date().toISOString(),\n  waStatus: r.waStatus || null,\n  waOptIn: truthy(r.waOptIn),\n  waOptOut: truthy(r.waOptOut),\n};\ninvoice.replyText = r.repliedAt ? (r.replyText || '') : (r.replyText || null);\ninvoice.stage = r.stage || 'replied';\nreturn [{ json: { ok: true, event: { sid: meta.sid, status: 'attached', attachedInvoiceId: meta.invoiceId, body: meta.body, kind: meta.kind, from: meta.from, suggestedInvoiceId: meta.invoiceId, messageStatus: null, timestamp: meta.now }, invoice } }];"
+      }
+    },
+    {
+      "id": "respond-attach-1",
+      "name": "Respond attach",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2080,
+        800
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "code-ignore-api-1",
+      "name": "Parse ignore",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        1100
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const b = $json.body || $json;\nreturn { json: { sid: String(b.sid || '') } };"
+      }
+    },
+    {
+      "id": "sheets-ignore-1",
+      "name": "Mark inbound ignored",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        520,
+        1100
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "inbound_log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "sid"
+          ],
+          "value": {
+            "sid": "={{ $json.sid }}",
+            "status": "ignored"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "respond-ignore-1",
+      "name": "Respond ignore",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        780,
+        1100
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, event: { sid: $json.sid, status: 'ignored' } } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "code-agg-stop-1",
+      "name": "Aggregate after STOP",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        -200
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all();\nconst first = items[0]?.json || {};\nreturn [{ json: {\n  sid: first.sid,\n  from: first.from,\n  body: first.body,\n  kind: first.kind,\n  now: first.now,\n  suggestedInvoiceId: first.suggestedInvoiceId || '',\n  attachedInvoiceId: '',\n  attachInvoiceId: '',\n  logStatus: 'pending',\n  matchIds: first.matchIds || [],\n} }];"
+      }
+    },
+    {
+      "id": "code-agg-start-1",
+      "name": "Aggregate after START",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all();\nconst first = items[0]?.json || {};\nreturn [{ json: {\n  sid: first.sid,\n  from: first.from,\n  body: first.body,\n  kind: first.kind,\n  now: first.now,\n  suggestedInvoiceId: first.suggestedInvoiceId || '',\n  attachedInvoiceId: '',\n  attachInvoiceId: '',\n  logStatus: 'pending',\n  matchIds: first.matchIds || [],\n} }];"
+      }
+    }
+  ],
+  "connections": {
+    "WA inbound": {
+      "main": [
+        [
+          {
+            "node": "Parse inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse inbound": {
+      "main": [
+        [
+          {
+            "node": "Read invoices for match",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read invoices for match": {
+      "main": [
+        [
+          {
+            "node": "Match phone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match phone": {
+      "main": [
+        [
+          {
+            "node": "Kind?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kind?": {
+      "main": [
+        [
+          {
+            "node": "Stop rows",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Start rows",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unique match?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark help/other",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stop rows": {
+      "main": [
+        [
+          {
+            "node": "Write STOP opt-out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write STOP opt-out": {
+      "main": [
+        [
+          {
+            "node": "Aggregate after STOP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start rows": {
+      "main": [
+        [
+          {
+            "node": "Write START opt-in",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write START opt-in": {
+      "main": [
+        [
+          {
+            "node": "Aggregate after START",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unique match?": {
+      "main": [
+        [
+          {
+            "node": "Auto-write reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark pending reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto-write reply": {
+      "main": [
+        [
+          {
+            "node": "Mark attached",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark attached": {
+      "main": [
+        [
+          {
+            "node": "Log inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark pending reply": {
+      "main": [
+        [
+          {
+            "node": "Log inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark help/other": {
+      "main": [
+        [
+          {
+            "node": "Log inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log inbound": {
+      "main": [
+        [
+          {
+            "node": "Attached reply?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attached reply?": {
+      "main": [
+        [
+          {
+            "node": "Classify reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Teams inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify reply": {
+      "main": [
+        [
+          {
+            "node": "Respond inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Teams inbound": {
+      "main": [
+        [
+          {
+            "node": "Respond inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WA status": {
+      "main": [
+        [
+          {
+            "node": "Parse status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse status": {
+      "main": [
+        [
+          {
+            "node": "Read invoices for status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read invoices for status": {
+      "main": [
+        [
+          {
+            "node": "Find by waMessageId",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find by waMessageId": {
+      "main": [
+        [
+          {
+            "node": "Status row found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status row found?": {
+      "main": [
+        [
+          {
+            "node": "Update waStatus",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update waStatus": {
+      "main": [
+        [
+          {
+            "node": "Log status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log status": {
+      "main": [
+        [
+          {
+            "node": "Respond status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse attach",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse attach": {
+      "main": [
+        [
+          {
+            "node": "Find inbound row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find inbound row": {
+      "main": [
+        [
+          {
+            "node": "Pick inbound body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick inbound body": {
+      "main": [
+        [
+          {
+            "node": "Write attached reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write attached reply": {
+      "main": [
+        [
+          {
+            "node": "Mark inbound attached",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark inbound attached": {
+      "main": [
+        [
+          {
+            "node": "Classify manual attach",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify manual attach": {
+      "main": [
+        [
+          {
+            "node": "Read attached invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read attached invoice": {
+      "main": [
+        [
+          {
+            "node": "Respond attach body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond attach body": {
+      "main": [
+        [
+          {
+            "node": "Respond attach",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ignore webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse ignore",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse ignore": {
+      "main": [
+        [
+          {
+            "node": "Mark inbound ignored",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark inbound ignored": {
+      "main": [
+        [
+          {
+            "node": "Respond ignore",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate after STOP": {
+      "main": [
+        [
+          {
+            "node": "Log inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate after START": {
+      "main": [
+        [
+          {
+            "node": "Log inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "dunnly"
+  }
+}

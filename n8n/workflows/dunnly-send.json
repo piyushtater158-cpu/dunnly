@@ -1,0 +1,1640 @@
+{
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "name": "dunnly-send",
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Read invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read invoice": {
+      "main": [
+        [
+          {
+            "node": "Resolve payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve payload": {
+      "main": [
+        [
+          {
+            "node": "Email already sent?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email already sent?": {
+      "main": [
+        [
+          {
+            "node": "Email skip (already sent)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send via PA Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send ok?": {
+      "main": [
+        [
+          {
+            "node": "Log email send",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log email failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log email send": {
+      "main": [
+        [
+          {
+            "node": "Email sent (mark)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log email failure": {
+      "main": [
+        [
+          {
+            "node": "Email failed (mark)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email sent (mark)": {
+      "main": [
+        [
+          {
+            "node": "Compute WA params",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email failed (mark)": {
+      "main": [
+        [
+          {
+            "node": "Compute WA params",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email skip (already sent)": {
+      "main": [
+        [
+          {
+            "node": "Compute WA params",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute WA params": {
+      "main": [
+        [
+          {
+            "node": "Normalize phone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize phone": {
+      "main": [
+        [
+          {
+            "node": "WA gate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WA gate?": {
+      "main": [
+        [
+          {
+            "node": "WA should send?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WA should send?": {
+      "main": [
+        [
+          {
+            "node": "Mode?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "WA skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mode?": {
+      "main": [
+        [
+          {
+            "node": "Provider?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "WA dry run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Provider?": {
+      "main": [
+        [
+          {
+            "node": "Build WA payload (Meta)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build WA payload (Twilio)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build WA payload (Meta)": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp (Meta)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build WA payload (Twilio)": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp (Twilio)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp (Meta)": {
+      "main": [
+        [
+          {
+            "node": "Parse WA result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp (Twilio)": {
+      "main": [
+        [
+          {
+            "node": "Wait for WA status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse WA result": {
+      "main": [
+        [
+          {
+            "node": "Decide final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WA dry run": {
+      "main": [
+        [
+          {
+            "node": "Decide final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WA skipped": {
+      "main": [
+        [
+          {
+            "node": "Decide final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide final": {
+      "main": [
+        [
+          {
+            "node": "Log WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Write final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write final": {
+      "main": [
+        [
+          {
+            "node": "Read final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read final": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for WA status": {
+      "main": [
+        [
+          {
+            "node": "Fetch WA status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch WA status": {
+      "main": [
+        [
+          {
+            "node": "Parse WA result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send via PA Gmail": {
+      "main": [
+        [
+          {
+            "node": "Send ok?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "nodes": [
+    {
+      "id": "wh-send-1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "dunnly-send",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dunnly/invoices/send",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "aXMj4HkLU3j2VBVy",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "set-config-1",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "waProvider",
+              "type": "string",
+              "value": "={{ $('Webhook').item.json.body.waProvider || 'twilio' }}"
+            },
+            {
+              "name": "waMode",
+              "type": "string",
+              "value": "={{ $('Webhook').item.json.body.waMode || 'live' }}"
+            },
+            {
+              "name": "waTemplateName",
+              "type": "string",
+              "value": "dunnly_invoice_reminder_v1"
+            },
+            {
+              "name": "waTemplateLang",
+              "type": "string",
+              "value": "en_US"
+            },
+            {
+              "name": "waTemplateArity",
+              "type": "number",
+              "value": 4
+            },
+            {
+              "name": "waTestRecipient",
+              "type": "string",
+              "value": "={{ $('Webhook').item.json.body.waTestRecipient || '' }}"
+            },
+            {
+              "name": "waAllowFictitious",
+              "type": "boolean",
+              "value": false
+            },
+            {
+              "name": "waDefaultCountry",
+              "type": "string",
+              "value": "1"
+            },
+            {
+              "name": "waGraphVersion",
+              "type": "string",
+              "value": "v21.0"
+            },
+            {
+              "name": "twilioAccountSid",
+              "type": "string",
+              "value": "={{ $env.TWILIO_ACCOUNT_SID || '' }}"
+            },
+            {
+              "name": "twilioWaFrom",
+              "type": "string",
+              "value": "whatsapp:+14155238886"
+            },
+            {
+              "name": "adminPhoneDigits",
+              "type": "string",
+              "value": "={{ String($('Webhook').item.json.body.adminPhoneDigits || '916001507395').replace(/\\D/g, '') }}"
+            },
+            {
+              "name": "waStatusCallback",
+              "type": "string",
+              "value": "={{ $('Webhook').item.json.body.waStatusCallback || 'https://n8n.piyushtater.com/webhook/dunnly/wa/status' }}"
+            },
+            {
+              "name": "twilioContentSid",
+              "type": "string",
+              "value": "={{ $env.TWILIO_CONTENT_SID || '' }}"
+            },
+            {
+              "name": "twilioContentMode",
+              "type": "string",
+              "value": "body"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "sheets-get-2",
+      "name": "Read invoice",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "id",
+              "lookupValue": "={{$('Webhook').item.json.body.invoiceId}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "set-resolve-1",
+      "name": "Resolve payload",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "subject",
+              "type": "string",
+              "value": "={{ (() => { const d = $('Read invoice').item.json; const days = d.daysOverdue ?? d['Days post due date '] ?? 0; return 'Overdue: ' + d.id + ' - $' + d.amountRemaining + ' - ' + days + ' days'; })() }}"
+            },
+            {
+              "name": "emailBody",
+              "type": "string",
+              "value": "={{ (() => { const w = $('Webhook').item.json.body.emailBody; const d = $json.draftEmail; const body = (w && String(w).trim()) || (d && String(d).trim()) || ''; if (body) return body; return 'Hello ' + ($json.customer || 'there') + ',\\n\\nThis is a payment reminder from Dunnly AR for invoice ' + $json.id + ' with amount remaining ' + $json.amountRemaining + ' (' + ($json.daysOverdue || 0) + ' days overdue).\\n\\nPlease reply with the expected payment date.\\n\\nThank you,\\nDunnly AR'; })() }}"
+            },
+            {
+              "name": "waBody",
+              "type": "string",
+              "value": "={{ $('Webhook').item.json.body.waBody || $json.draftWhatsapp }}"
+            },
+            {
+              "name": "toEmail",
+              "type": "string",
+              "value": "={{$json.email}}"
+            }
+          ]
+        },
+        "includeOtherFields": true
+      }
+    },
+    {
+      "id": "if-email-sent-1",
+      "name": "Email already sent?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ (() => { const isRetry = String($('Webhook').item.json.body.isRetry) === 'true'; if (isRetry) return 'no'; const stage = String($('Read invoice').item.json.stage || '').toLowerCase(); return ['sent','replied','classified','notified','failed'].includes(stage) ? 'yes' : 'no'; })() }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "set-email-skip-mark-1",
+      "name": "Email skip (already sent)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1100,
+        -220
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "emailOutcome",
+              "type": "string",
+              "value": "already-sent"
+            },
+            {
+              "name": "emailFailureReason",
+              "type": "string",
+              "value": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "if-send-ok-1",
+      "name": "Send ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ ($env.PA_EMAIL_WEBHOOK_URL && ($('Send via PA Gmail').item.json.statusCode === 200 || $('Send via PA Gmail').item.json.statusCode === 202) && !$('Send via PA Gmail').item.json.error) ? 'ok' : 'fail' }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "sheets-log-email-1",
+      "name": "Log email send",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1540,
+        -100
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "send_log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISO() }}",
+            "id": "={{ $('Webhook').item.json.body.invoiceId }}",
+            "channel": "email",
+            "recipient": "={{ $('Resolve payload').item.json.toEmail }}",
+            "body": "={{ $('Resolve payload').item.json.emailBody }}",
+            "status": "={{ $('Webhook').item.json.body.isRetry ? 'retry-ok' : 'ok' }}",
+            "providerMessageId": "",
+            "detail": ""
+          },
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "channel",
+              "displayName": "channel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "recipient",
+              "displayName": "recipient",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "body",
+              "displayName": "body",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "providerMessageId",
+              "displayName": "providerMessageId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "detail",
+              "displayName": "detail",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "sheets-log-email-fail-1",
+      "name": "Log email failure",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1540,
+        120
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "send_log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISO() }}",
+            "id": "={{ $('Webhook').item.json.body.invoiceId }}",
+            "channel": "email",
+            "recipient": "={{ $('Resolve payload').item.json.toEmail }}",
+            "body": "={{ $('Resolve payload').item.json.emailBody }}",
+            "status": "failed",
+            "providerMessageId": "",
+            "detail": "={{ String(($json.error && ($json.error.message || $json.error)) || $json || 'email send failed').slice(0, 300) }}"
+          },
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "channel",
+              "displayName": "channel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "recipient",
+              "displayName": "recipient",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "body",
+              "displayName": "body",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "providerMessageId",
+              "displayName": "providerMessageId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "detail",
+              "displayName": "detail",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "set-email-sent-mark-1",
+      "name": "Email sent (mark)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1760,
+        -100
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "emailOutcome",
+              "type": "string",
+              "value": "sent"
+            },
+            {
+              "name": "emailFailureReason",
+              "type": "string",
+              "value": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "set-email-failed-mark-1",
+      "name": "Email failed (mark)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1760,
+        120
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "emailOutcome",
+              "type": "string",
+              "value": "failed"
+            },
+            {
+              "name": "emailFailureReason",
+              "type": "string",
+              "value": "=PA Gmail send rejected: {{ JSON.stringify($('Send via PA Gmail').item.json.error || $('Send via PA Gmail').item.json.body || 'unknown').slice(0, 300) }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "code-wa-params-1",
+      "name": "Compute WA params",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const inv = $('Read invoice').item.json;\nconst resolved = $('Resolve payload').item.json;\nfunction sanitize(s) {\n  return String(s == null ? '' : s).replace(/[\\r\\n\\t]+/g, ' ').replace(/ {4,}/g, ' ').trim();\n}\nfunction money(n) {\n  const num = Number(n) || 0;\n  return '$' + num.toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',');\n}\nfunction istYmd() {\n  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());\n}\nfunction parseSupplyDate(raw) {\n  if (raw == null || raw === '') return null;\n  if (typeof raw === 'number' && Number.isFinite(raw)) {\n    const ms = Math.round((raw - 25569) * 86400 * 1000);\n    const d = new Date(ms);\n    if (!Number.isFinite(d.getTime())) return null;\n    return d.toISOString().slice(0, 10);\n  }\n  const s = String(raw).trim().replace(/^'/, '');\n  if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s.slice(0, 10);\n  const dmy = s.match(/^(\\d{1,2})[\\/\\-.](\\d{1,2})[\\/\\-.](\\d{4})$/);\n  if (dmy) return dmy[3] + '-' + dmy[2].padStart(2, '0') + '-' + dmy[1].padStart(2, '0');\n  const t = Date.parse(s);\n  if (Number.isFinite(t)) return new Date(t).toISOString().slice(0, 10);\n  return null;\n}\nfunction addCalendarDays(ymd, days) {\n  const p = ymd.split('-').map(Number);\n  const dt = new Date(Date.UTC(p[0], p[1] - 1, p[2]));\n  dt.setUTCDate(dt.getUTCDate() + days);\n  return dt.toISOString().slice(0, 10);\n}\nfunction diffCalendarDays(a, b) {\n  const A = a.split('-').map(Number);\n  const B = b.split('-').map(Number);\n  return Math.round((Date.UTC(A[0], A[1] - 1, A[2]) - Date.UTC(B[0], B[1] - 1, B[2])) / 86400000);\n}\nfunction deriveDaysOverdue(row) {\n  const stored = Number(row['Days post due date '] ?? row.daysOverdue ?? NaN);\n  const supply = parseSupplyDate(row['Date of supply'] ?? row['Date of Supply'] ?? row.dateOfSupply);\n  const creditRaw = row['Credit line'] ?? row['Credit Line'] ?? row.creditDays ?? row.creditLine;\n  const credit = creditRaw === '' || creditRaw == null ? null : Number(creditRaw);\n  if (supply != null && credit != null && Number.isFinite(credit) && credit >= 0) {\n    const due = addCalendarDays(supply, Math.floor(credit));\n    return Math.max(0, diffCalendarDays(istYmd(), due));\n  }\n  return Number.isFinite(stored) ? Math.max(0, Math.floor(stored)) : 0;\n}\nconst daysOverdue = deriveDaysOverdue(inv);\nconst waP1 = sanitize(inv.customer).slice(0, 60) || 'there';\nconst waP2 = sanitize(inv.id).slice(0, 32);\nconst waP3 = money(inv.amountRemaining);\nconst waP4 = String(Math.max(0, Math.round(daysOverdue)));\n// Prefer approved/LLM AR draft from Resolve payload; never shipping/Order Notifications copy.\nconst fromResolve = sanitize(resolved.waBody || '');\nconst waRenderedText = fromResolve || (\n  'Hi ' + waP1 + ' — invoice ' + waP2 + ' (' + waP3 + ') is ' + waP4 +\n  ' days overdue. Please pay the outstanding amount or reply with an expected payment date.'\n);\nreturn { json: { ...$json, waP1, waP2, waP3, waP4, waParamCount: 4, waRenderedText, derivedDaysOverdue: daysOverdue } };\n"
+      }
+    },
+    {
+      "id": "code-normalize-phone-1",
+      "name": "Normalize phone",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $('Read invoice').item.json.phone;\nlet s = String(raw == null ? \"\" : raw).trim();\ns = s.replace(/^'/, \"\");\nif (/^#(ERROR|N\\/A|REF|VALUE|DIV)/i.test(s)) s = \"\";\nconst hadPlus = s.startsWith(\"+\");\nlet digits = s.replace(/[^0-9]/g, \"\");\nconst defaultCountry = $('Config').item.json.waDefaultCountry || \"1\";\nif (!hadPlus && digits.length === 10) digits = defaultCountry + digits;\nconst phoneValid = /^[1-9]\\d{7,14}$/.test(digits);\nconst adminDigits = String($('Config').item.json.adminPhoneDigits || \"\").replace(/\\D/g, \"\");\nlet phoneFictitious = false;\nif (phoneValid && digits.startsWith(\"1\") && digits.length === 11) {\n  const areaCode = digits.slice(1, 4);\n  const exchange = digits.slice(4, 7);\n  const areaOk = /^[2-9][0-8]\\d$/.test(areaCode);\n  if (!areaOk || exchange === \"555\") phoneFictitious = true;\n}\nif (adminDigits && digits === adminDigits) phoneFictitious = false;\nconst testRecipient = ($('Config').item.json.waTestRecipient || \"\").trim();\nconst effectiveDigits = testRecipient ? testRecipient.replace(/[^0-9]/g, \"\") : digits;\nreturn { json: {\n  ...$json,\n  phoneValid,\n  phoneFictitious,\n  phoneDigits: effectiveDigits,\n  phoneE164: effectiveDigits ? (\"+\" + effectiveDigits) : \"\",\n  phoneTwilio: \"whatsapp:+\" + effectiveDigits,\n  phoneLog: \"wa:+\" + effectiveDigits,\n} };"
+      }
+    },
+    {
+      "id": "code-wa-gate-1",
+      "name": "WA gate?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const cfg = $('Config').item.json;\nconst inv = $('Read invoice').item.json;\nconst j = $json;\nfunction truthy(v) {\n  if (typeof v === 'boolean') return v;\n  if (typeof v === 'number') return v !== 0;\n  if (typeof v === 'string') {\n    const s = v.trim().toUpperCase();\n    return s === 'TRUE' || s === '1' || s === 'YES';\n  }\n  return false;\n}\nfunction istYmd() {\n  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());\n}\nfunction parseSupplyDate(raw) {\n  if (raw == null || raw === '') return null;\n  if (typeof raw === 'number' && Number.isFinite(raw)) {\n    const ms = Math.round((raw - 25569) * 86400 * 1000);\n    const d = new Date(ms);\n    if (!Number.isFinite(d.getTime())) return null;\n    return d.toISOString().slice(0, 10);\n  }\n  const s = String(raw).trim().replace(/^'/, '');\n  if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s.slice(0, 10);\n  const dmy = s.match(/^(\\d{1,2})[\\/\\-.](\\d{1,2})[\\/\\-.](\\d{4})$/);\n  if (dmy) return dmy[3] + '-' + dmy[2].padStart(2, '0') + '-' + dmy[1].padStart(2, '0');\n  const t = Date.parse(s);\n  if (Number.isFinite(t)) return new Date(t).toISOString().slice(0, 10);\n  return null;\n}\nfunction addCalendarDays(ymd, days) {\n  const p = ymd.split('-').map(Number);\n  const dt = new Date(Date.UTC(p[0], p[1] - 1, p[2]));\n  dt.setUTCDate(dt.getUTCDate() + days);\n  return dt.toISOString().slice(0, 10);\n}\nfunction diffCalendarDays(a, b) {\n  const A = a.split('-').map(Number);\n  const B = b.split('-').map(Number);\n  return Math.round((Date.UTC(A[0], A[1] - 1, A[2]) - Date.UTC(B[0], B[1] - 1, B[2])) / 86400000);\n}\nfunction deriveDaysOverdue(row) {\n  const stored = Number(row['Days post due date '] ?? row.daysOverdue ?? NaN);\n  const supply = parseSupplyDate(row['Date of supply'] ?? row['Date of Supply'] ?? row.dateOfSupply);\n  const creditRaw = row['Credit line'] ?? row['Credit Line'] ?? row.creditDays ?? row.creditLine;\n  const credit = creditRaw === '' || creditRaw == null ? null : Number(creditRaw);\n  if (supply != null && credit != null && Number.isFinite(credit) && credit >= 0) {\n    const due = addCalendarDays(supply, Math.floor(credit));\n    return Math.max(0, diffCalendarDays(istYmd(), due));\n  }\n  return Number.isFinite(stored) ? Math.max(0, Math.floor(stored)) : 0;\n}\nfunction skip(reason) { return { json: { ...j, waShouldSend: false, waSkipReason: reason, derivedDaysOverdue: deriveDaysOverdue(inv) } }; }\nif (cfg.waMode === 'off') return skip('disabled');\nconst adminDigits = String(cfg.adminPhoneDigits || '').replace(/\\D/g, '');\nconst isAdminPhone = !!(adminDigits && j.phoneDigits && j.phoneDigits === adminDigits);\nconst optedIn = truthy(inv.waOptIn) || isAdminPhone;\nif (!optedIn) return skip('no-consent');\nif (truthy(inv.waOptOut) && !isAdminPhone) return skip('opt-out');\nif (!j.phoneValid) return skip(inv.phone ? 'invalid-phone' : 'no-phone');\nif (j.phoneFictitious && !cfg.waAllowFictitious && !isAdminPhone) return skip('test-number');\nconst daysOverdue = deriveDaysOverdue(inv);\nif (daysOverdue <= 0 || Number(inv.amountRemaining) <= 0) return skip('not-overdue');\nif (j.waParamCount !== Number(cfg.waTemplateArity || 4)) return skip('param-mismatch');\nconst waPrior = String(inv.waStatus || '').trim();\nconst waSentMarker = String(inv.waSentAt || '').trim();\nconst waDelivered = !!(waSentMarker && waSentMarker !== 'RESET' && waPrior && !waPrior.startsWith('skipped') && waPrior !== 'not-sent');\nif (waDelivered && !truthy($('Webhook').item.json.body.isRetry)) return skip('already-sent');\nreturn { json: { ...j, waShouldSend: true, waSkipReason: null, derivedDaysOverdue: daysOverdue } };"
+      }
+    },
+    {
+      "id": "if-wa-should-send-1",
+      "name": "WA should send?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.waShouldSend ? 'yes' : 'no' }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "set-wa-skipped-1",
+      "name": "WA skipped",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2860,
+        200
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "waOk",
+              "type": "boolean",
+              "value": false
+            },
+            {
+              "name": "waProviderMessageId",
+              "type": "string",
+              "value": ""
+            },
+            {
+              "name": "waErrorCode",
+              "type": "string",
+              "value": ""
+            },
+            {
+              "name": "waErrorMessage",
+              "type": "string",
+              "value": ""
+            },
+            {
+              "name": "waStatus",
+              "type": "string",
+              "value": "={{ 'skipped:' + $json.waSkipReason }}"
+            },
+            {
+              "name": "waWaId",
+              "type": "string",
+              "value": ""
+            }
+          ]
+        },
+        "includeOtherFields": true
+      }
+    },
+    {
+      "id": "if-wa-mode-1",
+      "name": "Mode?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        -100
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $('Config').item.json.waMode }}",
+              "rightValue": "live",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "set-wa-dryrun-1",
+      "name": "WA dry run",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3080,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "waOk",
+              "type": "boolean",
+              "value": true
+            },
+            {
+              "name": "waProviderMessageId",
+              "type": "string",
+              "value": "dryrun"
+            },
+            {
+              "name": "waErrorCode",
+              "type": "string",
+              "value": ""
+            },
+            {
+              "name": "waErrorMessage",
+              "type": "string",
+              "value": ""
+            },
+            {
+              "name": "waStatus",
+              "type": "string",
+              "value": "dryrun"
+            },
+            {
+              "name": "waWaId",
+              "type": "string",
+              "value": ""
+            }
+          ]
+        },
+        "includeOtherFields": true
+      }
+    },
+    {
+      "id": "if-wa-provider-1",
+      "name": "Provider?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3080,
+        -220
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $('Config').item.json.waProvider }}",
+              "rightValue": "meta",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "code-wa-build-meta-1",
+      "name": "Build WA payload (Meta)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3300,
+        -320
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const j = $json;\nconst waPayload = {\n  messaging_product: \"whatsapp\",\n  recipient_type: \"individual\",\n  to: j.phoneDigits,\n  type: \"template\",\n  template: {\n    name: $('Config').item.json.waTemplateName,\n    language: { code: $('Config').item.json.waTemplateLang },\n    components: [{ type: \"body\", parameters: [\n      { type: \"text\", text: j.waP1 },\n      { type: \"text\", text: j.waP2 },\n      { type: \"text\", text: j.waP3 },\n      { type: \"text\", text: j.waP4 },\n    ] }],\n  },\n};\nreturn { json: { ...j, waPayload } };"
+      }
+    },
+    {
+      "id": "http-wa-send-meta-1",
+      "name": "Send WhatsApp (Meta)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3520,
+        -320
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $('Config').item.json.waGraphVersion }}/PLACEHOLDER_WA_PHONE_NUMBER_ID/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.waPayload) }}",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "xUnH1gVOhZZdvDPz",
+          "name": "Meta Graph API"
+        }
+      }
+    },
+    {
+      "id": "code-wa-build-twilio-1",
+      "name": "Build WA payload (Twilio)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3300,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const j = $json;\nconst cfg = $('Config').item.json;\nlet from = cfg.twilioWaFrom || \"whatsapp:+14155238886\";\nif (!String(from).toLowerCase().startsWith(\"whatsapp:\")) from = \"whatsapp:\" + String(from).replace(/^\\+/, \"+\");\nconst to = j.phoneTwilio || (\"whatsapp:\" + j.phoneE164);\nconst mode = String(cfg.twilioContentMode || \"body\").toLowerCase();\nconst contentSid = String(cfg.twilioContentSid || \"\").trim();\nconst contentVariables = JSON.stringify({\n  \"1\": String(j.waP1 || \"there\").slice(0, 60),\n  \"2\": String(j.waP2 || \"\").slice(0, 32),\n  \"3\": String(j.waP3 || \"\").slice(0, 40),\n  \"4\": String(j.waP4 || \"0\").slice(0, 80),\n});\nlet body = \"\";\ntry { body = String(($('Resolve payload').item.json.waBody) || \"\").trim(); } catch (e) { body = \"\"; }\nif (!body) body = String(j.waRenderedText || \"\").trim();\nif (!body) body = \"Hi \" + (j.waP1 || \"there\") + \" — invoice \" + (j.waP2 || \"\") + \" (\" + (j.waP3 || \"\") + \") is \" + (j.waP4 || \"0\") + \" days overdue. Please pay the outstanding amount or reply with an expected payment date.\";\nconst statusCallback = cfg.waStatusCallback || \"https://n8n.piyushtater.com/webhook/dunnly/wa/status\";\nreturn { json: {\n  ...j,\n  waFromE164: from,\n  waToE164: to,\n  waContentSid: contentSid,\n  waContentVariables: contentVariables,\n  waBody: body,\n  waUseContent: mode === \"content\" && !!contentSid,\n  waStatusCallback: statusCallback,\n  waSandboxBody: mode !== \"content\",\n} };"
+      }
+    },
+    {
+      "id": "http-wa-send-twilio-1",
+      "name": "Send WhatsApp (Twilio)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3400,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.twilio.com/2010-04-01/Accounts/' + $('Config').item.json.twilioAccountSid + '/Messages.json' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "From",
+              "value": "={{ $json.waFromE164 }}"
+            },
+            {
+              "name": "To",
+              "value": "={{ $json.waToE164 }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json.waBody }}"
+            },
+            {
+              "name": "StatusCallback",
+              "value": "={{ $json.waStatusCallback }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "RC3Y7rtBBqRtwc9N",
+          "name": "Twilio Basic Auth"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "code-wa-parse-1",
+      "name": "Parse WA result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4040,
+        -160
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const provider = $('Config').item.json.waProvider;\nconst prior = provider === \"twilio\" ? $('Build WA payload (Twilio)').item.json : $('Build WA payload (Meta)').item.json;\nconst createResp = $('Send WhatsApp (Twilio)').item.json;\nconst statusResp = $('Fetch WA status').item.json;\nlet waOk = false, waProviderMessageId = \"\", waErrorCode = \"\", waErrorMessage = \"\", waWaId = \"\", waStatus = \"\";\nif (provider === \"twilio\") {\n  const created = createResp.body || createResp;\n  const sid = created.sid || \"\";\n  const poll = statusResp.body || statusResp;\n  const finalStatus = String(poll.status || created.status || \"\").toLowerCase();\n  waProviderMessageId = sid || poll.sid || \"\";\n  if (poll.error_code || finalStatus === \"undelivered\" || finalStatus === \"failed\") {\n    waOk = false;\n    waErrorCode = String(poll.error_code || finalStatus || \"undelivered\");\n    waErrorMessage = String(poll.error_message || (\"Twilio status \" + finalStatus)).slice(0, 300);\n    waStatus = \"failed:\" + waErrorCode;\n  } else if (createResp.statusCode === 201 || sid) {\n    // queued/sent/delivered/read count as accepted API-side; prefer poll status\n    if ([\"delivered\", \"read\", \"sent\", \"queued\", \"sending\", \"accepted\"].includes(finalStatus) || !finalStatus) {\n      waOk = ![\"undelivered\", \"failed\"].includes(finalStatus);\n      waStatus = finalStatus || \"accepted\";\n      if (finalStatus === \"queued\" || finalStatus === \"sending\") {\n        // still in flight — mark queued so UI is honest\n        waOk = true;\n        waStatus = finalStatus;\n      }\n    } else {\n      waOk = false;\n      waStatus = \"failed:\" + finalStatus;\n    }\n  } else if (createResp.error || created.message) {\n    waOk = false;\n    waErrorCode = String(created.code || createResp.statusCode || \"twilio\");\n    waErrorMessage = String(createResp.error || created.message || \"\").slice(0, 300);\n    waStatus = \"failed:\" + waErrorCode;\n  } else {\n    waOk = false;\n    waErrorCode = \"unknown\";\n    waErrorMessage = JSON.stringify(createResp).slice(0, 300);\n    waStatus = \"failed:unknown\";\n  }\n} else {\n  const resp = $json;\n  const body = resp.body || {};\n  waOk = resp.statusCode === 200;\n  waProviderMessageId = (body.messages && body.messages[0] && body.messages[0].id) || \"\";\n  waWaId = (body.contacts && body.contacts[0] && body.contacts[0].wa_id) || \"\";\n  if (!waOk) {\n    const err = body.error || {};\n    waErrorCode = String(err.code || resp.statusCode);\n    waErrorMessage = String((err.error_data && err.error_data.details) || err.message || \"\").slice(0, 300);\n  }\n  waStatus = waOk ? \"accepted\" : (\"failed:\" + waErrorCode);\n}\nreturn { json: { ...prior, waOk, waProviderMessageId, waErrorCode, waErrorMessage, waStatus, waWaId } };"
+      }
+    },
+    {
+      "id": "code-decide-final-1",
+      "name": "Decide final",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4260,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const j = $json;\nconst inv = $('Read invoice').item.json;\nconst now = new Date().toISOString();\nconst emailOk = j.emailOutcome === 'sent' || j.emailOutcome === 'already-sent';\nconst emailFailed = j.emailOutcome === 'failed';\nconst waOk = !!j.waOk;\nconst waSkipped = !waOk && !!j.waSkipReason;\nconst stage = emailFailed ? 'failed' : 'sent';\nlet failureReason = '';\nif (emailFailed) {\n  failureReason = j.emailFailureReason || 'PA Gmail send rejected: unknown error';\n} else if (waSkipped) {\n  failureReason = '';\n}\nconst emailSentAt = j.emailOutcome === 'sent' ? now : (String(inv.emailSentAt || '') === 'RESET' ? '' : (inv.emailSentAt || ''));\nconst waSentAt = waOk ? now : (String(inv.waSentAt || '') === 'RESET' ? '' : (inv.waSentAt || ''));\nconst waMessageId = waOk ? (j.waProviderMessageId || '') : (inv.waMessageId || '');\nconst waStatus = waOk\n  ? (j.waStatus || 'accepted')\n  : (j.waStatus || (j.waSkipReason ? ('skipped:' + j.waSkipReason) : 'not-sent'));\nreturn { json: {\n  id: $('Webhook').item.json.body.invoiceId,\n  stage,\n  failureReason,\n  waStatus,\n  emailOutcome: j.emailOutcome || '',\n  draftEmail: $('Resolve payload').item.json.emailBody,\n  draftWhatsapp: $('Resolve payload').item.json.waBody,\n  updatedAt: now,\n  emailSentAt,\n  waSentAt,\n  waMessageId,\n  logRecipient: j.phoneLog || '',\n  logBody: j.waRenderedText || '',\n  logProviderMessageId: j.waProviderMessageId || '',\n  logDetail: j.waErrorMessage || j.waSkipReason || '',\n} };"
+      }
+    },
+    {
+      "id": "sheets-log-wa-1",
+      "name": "Log WhatsApp",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        4480,
+        0
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "send_log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISO() }}",
+            "id": "={{ $json.id }}",
+            "channel": "whatsapp",
+            "recipient": "={{ $json.logRecipient }}",
+            "body": "={{ $json.logBody }}",
+            "status": "={{ $json.waStatus }}",
+            "providerMessageId": "={{ $json.logProviderMessageId }}",
+            "detail": "={{ $json.logDetail }}"
+          },
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "channel",
+              "displayName": "channel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "recipient",
+              "displayName": "recipient",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "body",
+              "displayName": "body",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "providerMessageId",
+              "displayName": "providerMessageId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "detail",
+              "displayName": "detail",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "sheets-write-final-1",
+      "name": "Write final",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        4700,
+        0
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "value": {
+            "id": "={{ $('Decide final').item.json.id }}",
+            "stage": "={{ $('Decide final').item.json.stage }}",
+            "failureReason": "={{ $('Decide final').item.json.failureReason }}",
+            "waStatus": "={{ $('Decide final').item.json.waStatus }}",
+            "draftEmail": "={{ $('Decide final').item.json.draftEmail }}",
+            "draftWhatsapp": "={{ $('Decide final').item.json.draftWhatsapp }}",
+            "updatedAt": "={{ $('Decide final').item.json.updatedAt }}",
+            "emailSentAt": "={{ $('Decide final').item.json.emailSentAt }}",
+            "waSentAt": "={{ $('Decide final').item.json.waSentAt }}",
+            "waMessageId": "={{ $('Decide final').item.json.waMessageId }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "sheets-final-read-2",
+      "name": "Read final",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        4920,
+        0
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "id",
+              "lookupValue": "={{$('Webhook').item.json.body.invoiceId}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "code-normalize-3",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5140,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const r = $json;\nfunction istYmd(asOf) {\n  const d = asOf || new Date();\n  return new Intl.DateTimeFormat(\"en-CA\", {\n    timeZone: \"Asia/Kolkata\",\n    year: \"numeric\",\n    month: \"2-digit\",\n    day: \"2-digit\",\n  }).format(d);\n}\nfunction parseSupplyDate(raw) {\n  if (raw == null || raw === \"\") return null;\n  if (typeof raw === \"number\" && Number.isFinite(raw)) {\n    const ms = Math.round((raw - 25569) * 86400 * 1000);\n    const d = new Date(ms);\n    if (!Number.isFinite(d.getTime())) return null;\n    return d.toISOString().slice(0, 10);\n  }\n  const s = String(raw).trim().replace(/^'/, \"\");\n  if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s.slice(0, 10);\n  const dmy = s.match(/^(\\d{1,2})[\\/\\-.](\\d{1,2})[\\/\\-.](\\d{4})$/);\n  if (dmy) {\n    return dmy[3] + \"-\" + dmy[2].padStart(2, \"0\") + \"-\" + dmy[1].padStart(2, \"0\");\n  }\n  const t = Date.parse(s);\n  if (Number.isFinite(t)) return new Date(t).toISOString().slice(0, 10);\n  return null;\n}\nfunction addCalendarDays(ymd, days) {\n  const parts = ymd.split(\"-\").map(Number);\n  const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));\n  dt.setUTCDate(dt.getUTCDate() + days);\n  return dt.toISOString().slice(0, 10);\n}\nfunction diffCalendarDays(laterYmd, earlierYmd) {\n  const a = laterYmd.split(\"-\").map(Number);\n  const b = earlierYmd.split(\"-\").map(Number);\n  return Math.round((Date.UTC(a[0], a[1] - 1, a[2]) - Date.UTC(b[0], b[1] - 1, b[2])) / 86400000);\n}\nfunction pickSupplyCredit(r) {\n  const dateOfSupply = r.dateOfSupply ?? r[\"Date of supply\"] ?? r[\"Date of Supply\"] ?? r.DateOfSupply ?? r.date_of_supply ?? null;\n  const creditDays = r.creditDays ?? r.creditLine ?? r[\"Credit line\"] ?? r[\"Credit Line\"] ?? r[\"Credit Days\"] ?? r.credit_days ?? null;\n  return { dateOfSupply, creditDays };\n}\nfunction deriveOverdue(r) {\n  const picked = pickSupplyCredit(r);\n  const supply = parseSupplyDate(picked.dateOfSupply);\n  const creditRaw = picked.creditDays;\n  const credit = creditRaw === \"\" || creditRaw == null ? null : Number(creditRaw);\n  if (supply != null && credit != null && Number.isFinite(credit) && credit >= 0) {\n    const dueDate = addCalendarDays(supply, Math.floor(credit));\n    const today = istYmd(new Date());\n    return {\n      dateOfSupply: supply,\n      creditDays: Math.floor(credit),\n      dueDate,\n      daysOverdue: Math.max(0, diffCalendarDays(today, dueDate)),\n    };\n  }\n  const stored = Number(r.daysOverdue || 0);\n  return {\n    dateOfSupply: supply,\n    creditDays: credit != null && Number.isFinite(credit) ? Math.floor(credit) : null,\n    dueDate: null,\n    daysOverdue: Number.isFinite(stored) ? Math.max(0, Math.floor(stored)) : 0,\n  };\n}\nfunction truthy(v) {\n  if (typeof v === \"boolean\") return v;\n  if (typeof v === \"number\") return v !== 0;\n  if (typeof v === \"string\") {\n    const s = v.trim().toUpperCase();\n    return s === \"TRUE\" || s === \"1\" || s === \"YES\";\n  }\n  return false;\n}\nconst overdue = deriveOverdue(r);\nconst invoice = {\n  id: String(r.id || \"\"),\n  customer: String(r.customer || \"\"),\n  email: String(r.email || \"\"),\n  phone: String(r.phone || \"\").replace(/^'/, \"\"),\n  amountDue: Number(r.amountDue || 0),\n  amountRemaining: Number(r.amountRemaining || 0),\n  dateOfSupply: overdue.dateOfSupply,\n  creditDays: overdue.creditDays,\n  dueDate: overdue.dueDate,\n  daysOverdue: overdue.daysOverdue,\n  stage: r.stage || \"queued\",\n  classification: r.classification || null,\n  replyText: r.repliedAt ? (r.replyText || \"\") : null,\n  failureReason: r.failureReason || null,\n  draftEmail: r.draftEmail || null,\n  draftWhatsapp: r.draftWhatsapp || null,\n  updatedAt: r.updatedAt || new Date().toISOString(),\n  waStatus: r.waStatus || null,\n  waOptIn: truthy(r.waOptIn),\n  waOptOut: truthy(r.waOptOut),\n};\nif (invoice.stage === \"failed\") {\n  return { json: { ok: false, step: \"send\", failureReason: invoice.failureReason, invoice } };\n}\nreturn { json: { ok: true, invoice } };"
+      }
+    },
+    {
+      "id": "respond-3",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        5360,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "wait-wa-status-1",
+      "name": "Wait for WA status",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3600,
+        0
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 5,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "http-wa-status-1",
+      "name": "Fetch WA status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3820,
+        0
+      ],
+      "continueOnFail": true,
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "RC3Y7rtBBqRtwc9N",
+          "name": "Twilio Basic Auth"
+        }
+      },
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.twilio.com/2010-04-01/Accounts/' + $('Config').item.json.twilioAccountSid + '/Messages/' + ($json.body && $json.body.sid ? $json.body.sid : $json.sid) + '.json' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "pa-gmail-send-1",
+      "name": "Send via PA Gmail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        0
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PA_EMAIL_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ toEmail: $('Resolve payload').item.json.toEmail, To: $('Resolve payload').item.json.toEmail, email: $('Resolve payload').item.json.toEmail, subject: $('Resolve payload').item.json.subject, Subject: $('Resolve payload').item.json.subject, body: $('Resolve payload').item.json.emailBody, Body: $('Resolve payload').item.json.emailBody, invoiceId: $('Webhook').item.json.body.invoiceId, customer: $('Read invoice').item.json.customer || '' }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      }
+    }
+  ]
+}

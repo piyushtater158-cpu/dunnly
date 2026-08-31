@@ -1,0 +1,58 @@
+[
+  {
+    "id": "INV-24188",
+    "customer": "Northwind Components",
+    "amountDue": 48200,
+    "amountRemaining": 48200,
+    "daysOverdue": 52
+  },
+  {
+    "id": "INV-24102",
+    "customer": "Ashgrove Facility Mgmt",
+    "amountDue": 4150,
+    "amountRemaining": 1200,
+    "daysOverdue": 71
+  },
+  {
+    "id": "INV-24245",
+    "customer": "Piyush Tater Demo Co",
+    "amountDue": 57800,
+    "amountRemaining": 57800,
+    "daysOverdue": 21
+  },
+  {
+    "id": "INV-24274",
+    "customer": "Sundberg Roofing",
+    "amountDue": 9680,
+    "amountRemaining": 9680,
+    "daysOverdue": 9
+  },
+  {
+    "id": "INV-24127",
+    "customer": "Estcourt Energy Partners",
+    "amountDue": 118500,
+    "amountRemaining": 118500,
+    "daysOverdue": 79
+  },
+  {
+    "id": "INV-24208",
+    "customer": "Whitlow Aggregate",
+    "amountDue": 34600,
+    "amountRemaining": 34600,
+    "daysOverdue": 41
+  },
+  {
+    "id": "INV-24199",
+    "customer": "Kessington Labs",
+    "amountDue": 15600,
+    "amountRemaining": 15600,
+    "daysOverdue": 45
+  },
+  {
+    "id": "INV-1",
+    "customer": "Piyush Tater",
+    "amountDue": 48200,
+    "amountRemaining": 48200,
+    "daysOverdue": 45
+  }
+]

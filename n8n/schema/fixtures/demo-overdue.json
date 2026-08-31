@@ -1,0 +1,27 @@
+{
+  "asOf": "2026-08-27",
+  "timezone": "Asia/Kolkata",
+  "note": "supply 2026-07-01 + credit 30 → due 2026-07-31 → overdue 27 as of 2026-08-27",
+  "row": {
+    "id": "INV-24245",
+    "customer": "Piyush Tater Demo Co",
+    "email": "piyushtater158@gmail.com",
+    "phone": "+91 60015 07395",
+    "amountDue": 57800,
+    "amountRemaining": 57800,
+    "dateOfSupply": "2026-07-01",
+    "creditDays": 30,
+    "dueDate": "2026-07-31",
+    "daysOverdue": 27,
+    "stage": "drafted",
+    "classification": null,
+    "replyText": null,
+    "failureReason": null,
+    "draftEmail": null,
+    "draftWhatsapp": null,
+    "updatedAt": "2026-08-27T10:00:00.000Z",
+    "waStatus": null,
+    "waOptIn": true,
+    "waOptOut": false
+  }
+}

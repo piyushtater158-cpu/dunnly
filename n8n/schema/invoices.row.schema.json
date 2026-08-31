@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dunnly.local/schema/invoices.row.schema.json",
+  "title": "Dunnly normalized invoice row",
+  "type": "object",
+  "required": [
+    "id",
+    "customer",
+    "email",
+    "phone",
+    "amountDue",
+    "amountRemaining",
+    "daysOverdue",
+    "stage"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "customer": { "type": "string" },
+    "email": { "type": "string" },
+    "phone": { "type": "string" },
+    "amountDue": { "type": "number" },
+    "amountRemaining": { "type": "number" },
+    "dateOfSupply": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$|^$" },
+    "creditDays": { "type": ["integer", "null"], "minimum": 0 },
+    "dueDate": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$|^$" },
+    "daysOverdue": { "type": "integer", "minimum": 0 },
+    "stage": {
+      "type": "string",
+      "enum": ["queued", "drafted", "sent", "replied", "classified", "notified", "failed"]
+    },
+    "classification": {
+      "type": ["string", "null"],
+      "enum": ["paid", "promise", "dispute", "no_response", null]
+    },
+    "replyText": { "type": ["string", "null"] },
+    "replyChannel": {
+      "type": ["string", "null"],
+      "enum": ["email", "whatsapp", "manual", null]
+    },
+    "failureReason": { "type": ["string", "null"] },
+    "draftEmail": { "type": ["string", "null"] },
+    "draftWhatsapp": { "type": ["string", "null"] },
+    "updatedAt": { "type": ["string", "number"] },
+    "waStatus": { "type": ["string", "null"] },
+    "waOptIn": { "type": "boolean" },
+    "waOptOut": { "type": "boolean" }
+  }
+}
