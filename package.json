@@ -13,7 +13,7 @@
     "push:eval-llm": "node scripts/push-eval-llm.js"
   },
   "dependencies": {
-    "next": "15.4.6",
+    "next": "15.5.24",
     "react": "19.1.0",
     "react-dom": "19.1.0"
   },
