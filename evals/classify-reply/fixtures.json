@@ -3,12 +3,14 @@
     "id": "promise-date",
     "replyText": "I'll pay tomorrow",
     "expected": "promise",
+    "expectedPromiseOffset": 1,
     "notes": "clear payment commitment with relative date"
   },
   {
     "id": "promise-friday",
     "replyText": "Happy to pay by Friday",
     "expected": "promise",
+    "expectedPromiseFriday": true,
     "notes": "polite promise with weekday"
   },
   {
@@ -27,12 +29,14 @@
     "id": "no-response-empty",
     "replyText": "",
     "expected": "no_response",
+    "expectedPromiseNull": true,
     "notes": "empty reply / silence path"
   },
   {
     "id": "no-response-noise",
     "replyText": "ok thanks",
     "expected": "no_response",
+    "expectedPromiseNull": true,
     "notes": "ambiguous acknowledgment without payment intent"
   },
   {
@@ -45,6 +49,7 @@
     "id": "fidelity-multiline",
     "replyText": "Hi team,\nWe will clear INV-1 next week.\nThanks,\nAP",
     "expected": "promise",
+    "expectedPromiseOffset": 7,
     "notes": "multiline paste must project verbatim"
   }
 ]

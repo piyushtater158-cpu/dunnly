@@ -14,10 +14,16 @@ Rules for waBody (WhatsApp):
 - Short professional WhatsApp text (preferably under 400 characters, hard max 600).
 - Must mention the invoice id and that it is overdue / past due.
 - Must ask for a payment date or status (collections CTA).
-- Use only facts from the user message (customer, amounts, days overdue). Do not invent PO numbers, bank details, tracking numbers, delivery dates, or order status.
+- Use only facts from the user message (customer, amounts, days overdue, followupCount). Do not invent PO numbers, bank details, tracking numbers, delivery dates, or order status.
 - Plain text only — no markdown, no bullet lists, no subject line.
 - NEVER use shipping / order / fulfillment language (e.g. "has shipped", "delivered on", "order of", "tracking"). That is a different product template and is off-objective.
 - NEVER write marketing or promotional copy.
+
+Follow-up tone (when followupCount is provided):
+- count 0 or empty = first touch.
+- count 1 = polite second reminder referencing the earlier message.
+- count 2 = firmer, ask for a specific payment date.
+- count 3+ = final notice before internal escalation.
 
 Rules for emailBody:
 - Professional AR email, 2–4 short paragraphs, same collections objective.
@@ -34,12 +40,18 @@ function userMessage(invoice, opts = {}) {
     mode === "redraft"
       ? " This is a redraft — use different wording than a typical first draft."
       : "";
+  const followupHint =
+    invoice.followupCount != null && invoice.followupCount > 0
+      ? ` Follow-up touch #${invoice.followupCount} — escalate tone per system rules.`
+      : "";
   return (
     `Invoice ${invoice.id} for ${invoice.customer}. ` +
     `Amount due ${invoice.amountDue}, remaining ${invoice.amountRemaining}, ` +
     `${invoice.daysOverdue} days overdue.` +
+  (invoice.followupCount != null ? ` followupCount=${invoice.followupCount}.` : "") +
     ` Draft a polite payment-status-check email and a short WhatsApp message.` +
-    redraftHint
+    redraftHint +
+    followupHint
   );
 }
 

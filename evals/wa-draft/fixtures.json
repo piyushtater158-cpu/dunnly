@@ -54,5 +54,29 @@
     "amountDue": 48200,
     "amountRemaining": 48200,
     "daysOverdue": 45
+  },
+  {
+    "id": "INV-24188-touch1",
+    "customer": "Northwind Components",
+    "amountDue": 48200,
+    "amountRemaining": 48200,
+    "daysOverdue": 52,
+    "followupCount": 1
+  },
+  {
+    "id": "INV-24188-touch2",
+    "customer": "Northwind Components",
+    "amountDue": 48200,
+    "amountRemaining": 48200,
+    "daysOverdue": 52,
+    "followupCount": 2
+  },
+  {
+    "id": "INV-24188-touch3",
+    "customer": "Northwind Components",
+    "amountDue": 48200,
+    "amountRemaining": 48200,
+    "daysOverdue": 52,
+    "followupCount": 3
   }
 ]

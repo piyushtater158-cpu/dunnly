@@ -11,6 +11,8 @@ import { computeDaysOverdue, pickSupplyCredit } from "@/lib/overdue";
 import {
   money,
   type Classification,
+  type CadenceState,
+  type FollowupBucket,
   type InboundEvent,
   type Invoice,
   type Stage,
@@ -80,31 +82,6 @@ async function n8nFetchOnce(
   const url = webhookUrl(path);
   const secret = process.env.N8N_WEBHOOK_SECRET;
 
-  // #region agent log
-  fetch("http://127.0.0.1:7369/ingest/1710511b-54ab-49e5-9ad2-a85aa0c54305", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3a635b" },
-    body: JSON.stringify({
-      sessionId: "3a635b",
-      hypothesisId: "A",
-      location: "lib/n8n.ts:n8nFetch:entry",
-      message: "n8nFetch start",
-      data: {
-        path,
-        attempt,
-        method: init?.method ?? "GET",
-        timeoutMs,
-        hasSecret: !!secret,
-        bodyKeys:
-          init?.body && typeof init.body === "object"
-            ? Object.keys(init.body as object)
-            : [],
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
-
   let res: Response;
   try {
     res = await fetch(url, {
@@ -118,24 +95,6 @@ async function n8nFetchOnce(
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (err) {
-    // #region agent log
-    fetch("http://127.0.0.1:7369/ingest/1710511b-54ab-49e5-9ad2-a85aa0c54305", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3a635b" },
-      body: JSON.stringify({
-        sessionId: "3a635b",
-        hypothesisId: "D",
-        location: "lib/n8n.ts:n8nFetch:network",
-        message: "n8nFetch network/timeout error",
-        data: {
-          path,
-          attempt,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     throw new N8nUnreachableError(
       "N8N request failed (" + path + "): " + (err instanceof Error ? err.message : String(err))
     );
@@ -143,68 +102,17 @@ async function n8nFetchOnce(
 
   const rawText = await res.text();
 
-  // #region agent log
-  fetch("http://127.0.0.1:7369/ingest/1710511b-54ab-49e5-9ad2-a85aa0c54305", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3a635b" },
-    body: JSON.stringify({
-      sessionId: "3a635b",
-      hypothesisId: "A",
-      location: "lib/n8n.ts:n8nFetch:response",
-      message: "n8nFetch raw response",
-      data: {
-        path,
-        attempt,
-        status: res.status,
-        ok: res.ok,
-        contentType: res.headers.get("content-type"),
-        bodyLen: rawText.length,
-        bodyHead: rawText.slice(0, 200),
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
-
   if (!res.ok) {
     throw new N8nUnreachableError("N8N responded " + res.status + " for " + path);
   }
 
   if (!rawText.trim()) {
-    // #region agent log
-    fetch("http://127.0.0.1:7369/ingest/1710511b-54ab-49e5-9ad2-a85aa0c54305", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3a635b" },
-      body: JSON.stringify({
-        sessionId: "3a635b",
-        hypothesisId: "A",
-        location: "lib/n8n.ts:n8nFetch:empty",
-        message: "empty body — will retry",
-        data: { path, attempt, status: res.status },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     return null;
   }
 
   try {
     return JSON.parse(rawText) as N8nEnvelope;
   } catch {
-    // #region agent log
-    fetch("http://127.0.0.1:7369/ingest/1710511b-54ab-49e5-9ad2-a85aa0c54305", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3a635b" },
-      body: JSON.stringify({
-        sessionId: "3a635b",
-        hypothesisId: "A",
-        location: "lib/n8n.ts:n8nFetch:badjson",
-        message: "non-JSON body",
-        data: { path, attempt, bodyHead: rawText.slice(0, 120) },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     throw new N8nUnreachableError("N8N returned a non-JSON response for " + path);
   }
 }
@@ -217,6 +125,34 @@ function truthy(v: unknown): boolean {
     return s === "TRUE" || s === "1" || s === "YES";
   }
   return false;
+}
+
+function parseYmd(v: unknown): string | null {
+  if (v == null || v === "") return null;
+  const s = String(v).trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+
+function parseCadenceState(v: unknown): CadenceState {
+  if (v == null || v === "") return null;
+  const s = String(v);
+  if (s === "active" || s === "paused" || s === "closed") return s;
+  return null;
+}
+
+function parseFollowupBucket(v: unknown): FollowupBucket {
+  if (v == null || v === "") return null;
+  const s = String(v);
+  if (s === "W1" || s === "W2" || s === "W3" || s === "W4") return s;
+  return null;
+}
+
+function parseLastTouchAt(v: unknown): number | null {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  if (Number.isFinite(n) && n > 0) return n;
+  const t = Date.parse(String(v));
+  return Number.isFinite(t) ? t : null;
 }
 
 export function toInvoice(raw: unknown): Invoice {
@@ -270,6 +206,12 @@ export function toInvoice(raw: unknown): Invoice {
     waStatus: typeof r.waStatus === "string" && r.waStatus ? r.waStatus : null,
     waOptIn: truthy(r.waOptIn),
     waOptOut: truthy(r.waOptOut),
+    nextActionAt: parseYmd(r.nextActionAt),
+    followupBucket: parseFollowupBucket(r.followupBucket),
+    followupCount: Number.isFinite(Number(r.followupCount)) ? Math.floor(Number(r.followupCount)) : 0,
+    cadenceState: parseCadenceState(r.cadenceState),
+    promiseDate: parseYmd(r.promiseDate),
+    lastTouchAt: parseLastTouchAt(r.lastTouchAt),
   };
 }
 
@@ -364,28 +306,8 @@ export async function sendInvoiceRemote(
     waMode?: string;
   }
 ): Promise<StepResult> {
-  // #region agent log
-  fetch("http://127.0.0.1:7369/ingest/1710511b-54ab-49e5-9ad2-a85aa0c54305", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "725e23" },
-    body: JSON.stringify({
-      sessionId: "725e23",
-      runId: "pre-fix",
-      hypothesisId: "C",
-      location: "lib/n8n.ts:sendInvoiceRemote",
-      message: "n8n send payload (draft passed but Twilio uses template params)",
-      data: {
-        invoiceId,
-        waProvider: opts.waProvider ?? "twilio",
-        waMode: opts.waMode ?? process.env.WA_MODE ?? "live",
-        waBodyLen: opts.waBody ? opts.waBody.length : 0,
-        waBodyPreview: opts.waBody ? opts.waBody.slice(0, 100) : null,
-        note: "dunnly-send Build WA payload (Twilio) ignores draft for live sandbox Body; fills Order Notifications slots",
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
+  const twilioAccountSid = (process.env.TWILIO_ACCOUNT_SID || "").trim();
+  const twilioContentSid = (process.env.TWILIO_CONTENT_SID || "").trim();
   const body = await n8nFetch("/dunnly/invoices/send", {
     method: "POST",
     body: {
@@ -396,6 +318,9 @@ export async function sendInvoiceRemote(
       waProvider: opts.waProvider ?? "twilio",
       waMode: opts.waMode ?? process.env.WA_MODE ?? "live",
       adminPhoneDigits: (process.env.ADMIN_PHONE || "").replace(/\D/g, "") || "916001507395",
+      // Fallback when Oracle n8n host lacks TWILIO_* in $env (public repo cannot hardcode SIDs).
+      ...(twilioAccountSid ? { twilioAccountSid } : {}),
+      ...(twilioContentSid ? { twilioContentSid } : {}),
     },
   });
   return toStepResult(body);
@@ -422,6 +347,21 @@ export async function attachInboundRemote(
     event: body.event ? toInboundEvent(body.event) : undefined,
     invoice: body.invoice ? toInvoice(body.invoice) : undefined,
   };
+}
+
+export async function setCadenceRemote(
+  invoiceId: string,
+  fields: {
+    cadenceState?: CadenceState;
+    nextActionAt?: string | null;
+    followupBucket?: FollowupBucket;
+  }
+): Promise<StepResult> {
+  const body = await n8nFetch("/dunnly/invoices/draft", {
+    method: "POST",
+    body: { invoiceId, mode: "cadence", ...fields },
+  });
+  return toStepResult(body);
 }
 
 export async function ignoreInboundRemote(sid: string): Promise<{ ok: boolean; event?: InboundEvent }> {

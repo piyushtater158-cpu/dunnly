@@ -1,0 +1,709 @@
+{
+  "name": "dunnly-followup",
+  "nodes": [
+    {
+      "id": "sched-followup-1",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        },
+        "timezone": "Asia/Kolkata"
+      }
+    },
+    {
+      "id": "set-config-followup-1",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "enabled",
+              "type": "string",
+              "value": "={{ $env.FOLLOWUP_ENABLED || 'true' }}"
+            },
+            {
+              "name": "batchCap",
+              "type": "number",
+              "value": "={{ Number($env.FOLLOWUP_BATCH_CAP || 25) }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "if-enabled-followup-1",
+      "name": "Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.enabled }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "sheets-read-followup-1",
+      "name": "Read invoices",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "code-select-due-1",
+      "name": "Select due",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "/**\r\n * Shared invoice normalize — keep in sync across dunnly-read / draft / send / classify / inbound.\r\n * Returns one Invoice-shaped object from a Sheets row.\r\n * Derives dueDate + daysOverdue from dateOfSupply + creditDays (IST calendar).\r\n */\r\n\r\nfunction istYmd(asOf) {\r\n  const d = asOf || new Date();\r\n  return new Intl.DateTimeFormat(\"en-CA\", {\r\n    timeZone: \"Asia/Kolkata\",\r\n    year: \"numeric\",\r\n    month: \"2-digit\",\r\n    day: \"2-digit\",\r\n  }).format(d);\r\n}\r\n\r\nfunction parseSupplyDate(raw) {\r\n  if (raw == null || raw === \"\") return null;\r\n  if (typeof raw === \"number\" && Number.isFinite(raw)) {\r\n    const ms = Math.round((raw - 25569) * 86400 * 1000);\r\n    const d = new Date(ms);\r\n    if (!Number.isFinite(d.getTime())) return null;\r\n    return d.toISOString().slice(0, 10);\r\n  }\r\n  const s = String(raw).trim().replace(/^'/, \"\");\r\n  if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s.slice(0, 10);\r\n  const dmy = s.match(/^(\\d{1,2})[\\/\\-.](\\d{1,2})[\\/\\-.](\\d{4})$/);\r\n  if (dmy) {\r\n    return dmy[3] + \"-\" + dmy[2].padStart(2, \"0\") + \"-\" + dmy[1].padStart(2, \"0\");\r\n  }\r\n  const t = Date.parse(s);\r\n  if (Number.isFinite(t)) return new Date(t).toISOString().slice(0, 10);\r\n  return null;\r\n}\r\n\r\nfunction addCalendarDays(ymd, days) {\r\n  const parts = ymd.split(\"-\").map(Number);\r\n  const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));\r\n  dt.setUTCDate(dt.getUTCDate() + days);\r\n  return dt.toISOString().slice(0, 10);\r\n}\r\n\r\nfunction diffCalendarDays(laterYmd, earlierYmd) {\r\n  const a = laterYmd.split(\"-\").map(Number);\r\n  const b = earlierYmd.split(\"-\").map(Number);\r\n  const msA = Date.UTC(a[0], a[1] - 1, a[2]);\r\n  const msB = Date.UTC(b[0], b[1] - 1, b[2]);\r\n  return Math.round((msA - msB) / 86400000);\r\n}\r\n\r\nfunction pickSupplyCredit(r) {\r\n  const dateOfSupply =\r\n    r.dateOfSupply ?? r[\"Date of Supply\"] ?? r[\"Date of supply\"] ?? r.DateOfSupply ?? r.date_of_supply ?? null;\r\n  const creditDays =\r\n    r.creditDays ?? r.creditLine ?? r[\"Credit Line\"] ?? r[\"Credit line\"] ?? r[\"Credit Days\"] ?? r.credit_days ?? null;\r\n  return { dateOfSupply, creditDays };\r\n}\r\n\r\nfunction pickStoredOverdue(r) {\r\n  if (r.daysOverdue != null && r.daysOverdue !== \"\") return r.daysOverdue;\r\n  if (r[\"Days post due date \"] != null && r[\"Days post due date \"] !== \"\") return r[\"Days post due date \"];\r\n  for (const k of Object.keys(r)) {\r\n    if (String(k).trim() === \"Days post due date\" && r[k] != null && r[k] !== \"\") return r[k];\r\n  }\r\n  return 0;\r\n}\r\n\r\nfunction deriveOverdue(r) {\r\n  const picked = pickSupplyCredit(r);\r\n  const supply = parseSupplyDate(picked.dateOfSupply);\r\n  const creditRaw = picked.creditDays;\r\n  const credit = creditRaw === \"\" || creditRaw == null ? null : Number(creditRaw);\r\n  if (supply != null && credit != null && Number.isFinite(credit) && credit >= 0) {\r\n    const dueDate = addCalendarDays(supply, Math.floor(credit));\r\n    const today = istYmd(new Date());\r\n    return {\r\n      dateOfSupply: supply,\r\n      creditDays: Math.floor(credit),\r\n      dueDate,\r\n      daysOverdue: Math.max(0, diffCalendarDays(today, dueDate)),\r\n    };\r\n  }\r\n  const stored = Number(pickStoredOverdue(r) || 0);\r\n  return {\r\n    dateOfSupply: supply,\r\n    creditDays: credit != null && Number.isFinite(credit) ? Math.floor(credit) : null,\r\n    dueDate: null,\r\n    daysOverdue: Number.isFinite(stored) ? Math.max(0, Math.floor(stored)) : 0,\r\n  };\r\n}\r\n\r\nfunction normalizeInvoiceRow(r) {\r\n  const truthy = (v) => {\r\n    if (typeof v === \"boolean\") return v;\r\n    if (typeof v === \"number\") return v !== 0;\r\n    if (typeof v === \"string\") {\r\n      const s = v.trim().toUpperCase();\r\n      return s === \"TRUE\" || s === \"1\" || s === \"YES\";\r\n    }\r\n    return false;\r\n  };\r\n  const overdue = deriveOverdue(r);\r\n  return {\r\n    id: String(r.id || \"\"),\r\n    customer: String(r.customer || \"\"),\r\n    email: String(r.email || \"\"),\r\n    phone: String(r.phone || \"\").replace(/^'/, \"\"),\r\n    amountDue: Number(r.amountDue || 0),\r\n    amountRemaining: Number(r.amountRemaining || 0),\r\n    dateOfSupply: overdue.dateOfSupply,\r\n    creditDays: overdue.creditDays,\r\n    dueDate: overdue.dueDate,\r\n    daysOverdue: overdue.daysOverdue,\r\n    stage: r.stage || \"queued\",\r\n    classification: r.classification || null,\r\n    replyText: r.repliedAt ? (r.replyText || \"\") : null,\r\n    replyChannel: r.replyChannel || null,\r\n    failureReason: r.failureReason || null,\r\n    draftEmail: r.draftEmail || null,\r\n    draftWhatsapp: r.draftWhatsapp || null,\r\n    updatedAt: r.updatedAt || new Date().toISOString(),\r\n    waStatus: r.waStatus || null,\r\n    waOptIn: truthy(r.waOptIn),\r\n    waOptOut: truthy(r.waOptOut),\r\n    nextActionAt: pickYmd(r.nextActionAt),\r\n    followupBucket: pickBucket(r.followupBucket),\r\n    followupCount: pickInt(r.followupCount, 0),\r\n    cadenceState: pickCadenceState(r.cadenceState),\r\n    promiseDate: pickYmd(r.promiseDate),\r\n    lastTouchAt: pickLastTouchAt(r.lastTouchAt),\r\n  };\r\n}\r\n\r\nfunction pickYmd(v) {\r\n  if (v == null || v === \"\") return null;\r\n  const s = String(v).trim().slice(0, 10);\r\n  return /^\\d{4}-\\d{2}-\\d{2}$/.test(s) ? s : null;\r\n}\r\n\r\nfunction pickBucket(v) {\r\n  if (v == null || v === \"\") return null;\r\n  const s = String(v).trim();\r\n  return s === \"W1\" || s === \"W2\" || s === \"W3\" || s === \"W4\" ? s : null;\r\n}\r\n\r\nfunction pickCadenceState(v) {\r\n  if (v == null || v === \"\") return null;\r\n  const s = String(v).trim();\r\n  return s === \"active\" || s === \"paused\" || s === \"closed\" ? s : null;\r\n}\r\n\r\nfunction pickInt(v, fallback) {\r\n  const n = Number(v);\r\n  return Number.isFinite(n) ? Math.floor(n) : fallback;\r\n}\r\n\r\nfunction pickLastTouchAt(v) {\r\n  if (v == null || v === \"\") return null;\r\n  const n = Number(v);\r\n  if (Number.isFinite(n) && n > 0) return n;\r\n  const t = Date.parse(String(v));\r\n  return Number.isFinite(t) ? t : null;\r\n}\nfunction istTodayTouch(lastTouchAt) {\n  if (!lastTouchAt) return false;\n  const n = Number(lastTouchAt);\n  const d = Number.isFinite(n) && n > 0 ? new Date(n) : new Date(String(lastTouchAt));\n  if (!Number.isFinite(d.getTime())) return false;\n  return istYmd(d) === istYmd(new Date());\n}\nconst today = istYmd(new Date());\nconst due = [];\nconst toClose = [];\nfor (const { json: r } of $input.all()) {\n  const amt = Number(r.amountRemaining || 0);\n  if (r.cadenceState === 'active' && amt <= 0) {\n    toClose.push({ json: { id: r.id, cadenceState: 'closed', nextActionAt: '', updatedAt: new Date().toISOString() } });\n    continue;\n  }\n  if (String(r.cadenceState || '') !== 'active') continue;\n  const next = String(r.nextActionAt || '').slice(0, 10);\n  if (!next || next > today) continue;\n  if (amt <= 0) continue;\n  const stage = String(r.stage || '');\n  if (stage === 'drafted' || stage === 'queued') continue;\n  if (istTodayTouch(r.lastTouchAt)) continue;\n  due.push({ json: r });\n}\nif (toClose.length) {\n  return [...toClose, ...due];\n}\nreturn due;\n"
+      }
+    },
+    {
+      "id": "if-close-only-1",
+      "name": "Close row?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.cadenceState }}",
+              "rightValue": "closed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "sheets-close-row-1",
+      "name": "Close zero balance",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1560,
+        -120
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "value": {
+            "id": "={{ $json.id }}",
+            "cadenceState": "closed",
+            "nextActionAt": "",
+            "updatedAt": "={{ $json.updatedAt }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "limit-followup-1",
+      "name": "Limit",
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        80
+      ],
+      "parameters": {
+        "maxItems": "={{ $('Config').item.json.batchCap }}"
+      }
+    },
+    {
+      "id": "loop-followup-1",
+      "name": "Loop Over Items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1820,
+        80
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "http-redraft-1",
+      "name": "Request redraft",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2080,
+        0
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.N8N_PUBLIC_WEBHOOK_BASE || 'https://n8n.piyushtater.com/webhook') + '/dunnly/invoices/draft' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ invoiceId: $json.id, mode: 'redraft' }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "aXMj4HkLU3j2VBVy",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "id": "if-redraft-ok-1",
+      "name": "Redraft ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2340,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.ok === true && $json.invoice ? 'yes' : 'no' }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "code-log-fail-1",
+      "name": "Log redraft failed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2600,
+        120
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const inv = $('Loop Over Items').item.json;\nreturn { json: {\n  id: inv.id,\n  followupCount: inv.followupCount || 0,\n  bucket: inv.followupBucket || '',\n  nextActionAt: inv.nextActionAt || '',\n  classification: inv.classification || '',\n  reason: 'redraft_failed',\n  channel: 'scheduler',\n} };"
+      }
+    },
+    {
+      "id": "sheets-log-fail-1",
+      "name": "Append redraft failed log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2860,
+        120
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "followup_log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISO() }}",
+            "id": "={{ $json.id }}",
+            "followupCount": "={{ $json.followupCount }}",
+            "bucket": "={{ $json.bucket }}",
+            "nextActionAt": "={{ $json.nextActionAt }}",
+            "classification": "={{ $json.classification }}",
+            "reason": "={{ $json.reason }}",
+            "channel": "={{ $json.channel }}"
+          }
+        },
+        "options": {
+          "useAppend": true
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "code-compute-rearm-1",
+      "name": "Compute next action",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2600,
+        -80
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "/**\r\n * Shared invoice normalize — keep in sync across dunnly-read / draft / send / classify / inbound.\r\n * Returns one Invoice-shaped object from a Sheets row.\r\n * Derives dueDate + daysOverdue from dateOfSupply + creditDays (IST calendar).\r\n */\r\n\r\nfunction istYmd(asOf) {\r\n  const d = asOf || new Date();\r\n  return new Intl.DateTimeFormat(\"en-CA\", {\r\n    timeZone: \"Asia/Kolkata\",\r\n    year: \"numeric\",\r\n    month: \"2-digit\",\r\n    day: \"2-digit\",\r\n  }).format(d);\r\n}\r\n\r\nfunction parseSupplyDate(raw) {\r\n  if (raw == null || raw === \"\") return null;\r\n  if (typeof raw === \"number\" && Number.isFinite(raw)) {\r\n    const ms = Math.round((raw - 25569) * 86400 * 1000);\r\n    const d = new Date(ms);\r\n    if (!Number.isFinite(d.getTime())) return null;\r\n    return d.toISOString().slice(0, 10);\r\n  }\r\n  const s = String(raw).trim().replace(/^'/, \"\");\r\n  if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s.slice(0, 10);\r\n  const dmy = s.match(/^(\\d{1,2})[\\/\\-.](\\d{1,2})[\\/\\-.](\\d{4})$/);\r\n  if (dmy) {\r\n    return dmy[3] + \"-\" + dmy[2].padStart(2, \"0\") + \"-\" + dmy[1].padStart(2, \"0\");\r\n  }\r\n  const t = Date.parse(s);\r\n  if (Number.isFinite(t)) return new Date(t).toISOString().slice(0, 10);\r\n  return null;\r\n}\r\n\r\nfunction addCalendarDays(ymd, days) {\r\n  const parts = ymd.split(\"-\").map(Number);\r\n  const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));\r\n  dt.setUTCDate(dt.getUTCDate() + days);\r\n  return dt.toISOString().slice(0, 10);\r\n}\r\n\r\nfunction diffCalendarDays(laterYmd, earlierYmd) {\r\n  const a = laterYmd.split(\"-\").map(Number);\r\n  const b = earlierYmd.split(\"-\").map(Number);\r\n  const msA = Date.UTC(a[0], a[1] - 1, a[2]);\r\n  const msB = Date.UTC(b[0], b[1] - 1, b[2]);\r\n  return Math.round((msA - msB) / 86400000);\r\n}\r\n\r\nfunction pickSupplyCredit(r) {\r\n  const dateOfSupply =\r\n    r.dateOfSupply ?? r[\"Date of Supply\"] ?? r[\"Date of supply\"] ?? r.DateOfSupply ?? r.date_of_supply ?? null;\r\n  const creditDays =\r\n    r.creditDays ?? r.creditLine ?? r[\"Credit Line\"] ?? r[\"Credit line\"] ?? r[\"Credit Days\"] ?? r.credit_days ?? null;\r\n  return { dateOfSupply, creditDays };\r\n}\r\n\r\nfunction pickStoredOverdue(r) {\r\n  if (r.daysOverdue != null && r.daysOverdue !== \"\") return r.daysOverdue;\r\n  if (r[\"Days post due date \"] != null && r[\"Days post due date \"] !== \"\") return r[\"Days post due date \"];\r\n  for (const k of Object.keys(r)) {\r\n    if (String(k).trim() === \"Days post due date\" && r[k] != null && r[k] !== \"\") return r[k];\r\n  }\r\n  return 0;\r\n}\r\n\r\nfunction deriveOverdue(r) {\r\n  const picked = pickSupplyCredit(r);\r\n  const supply = parseSupplyDate(picked.dateOfSupply);\r\n  const creditRaw = picked.creditDays;\r\n  const credit = creditRaw === \"\" || creditRaw == null ? null : Number(creditRaw);\r\n  if (supply != null && credit != null && Number.isFinite(credit) && credit >= 0) {\r\n    const dueDate = addCalendarDays(supply, Math.floor(credit));\r\n    const today = istYmd(new Date());\r\n    return {\r\n      dateOfSupply: supply,\r\n      creditDays: Math.floor(credit),\r\n      dueDate,\r\n      daysOverdue: Math.max(0, diffCalendarDays(today, dueDate)),\r\n    };\r\n  }\r\n  const stored = Number(pickStoredOverdue(r) || 0);\r\n  return {\r\n    dateOfSupply: supply,\r\n    creditDays: credit != null && Number.isFinite(credit) ? Math.floor(credit) : null,\r\n    dueDate: null,\r\n    daysOverdue: Number.isFinite(stored) ? Math.max(0, Math.floor(stored)) : 0,\r\n  };\r\n}\r\n\r\nfunction normalizeInvoiceRow(r) {\r\n  const truthy = (v) => {\r\n    if (typeof v === \"boolean\") return v;\r\n    if (typeof v === \"number\") return v !== 0;\r\n    if (typeof v === \"string\") {\r\n      const s = v.trim().toUpperCase();\r\n      return s === \"TRUE\" || s === \"1\" || s === \"YES\";\r\n    }\r\n    return false;\r\n  };\r\n  const overdue = deriveOverdue(r);\r\n  return {\r\n    id: String(r.id || \"\"),\r\n    customer: String(r.customer || \"\"),\r\n    email: String(r.email || \"\"),\r\n    phone: String(r.phone || \"\").replace(/^'/, \"\"),\r\n    amountDue: Number(r.amountDue || 0),\r\n    amountRemaining: Number(r.amountRemaining || 0),\r\n    dateOfSupply: overdue.dateOfSupply,\r\n    creditDays: overdue.creditDays,\r\n    dueDate: overdue.dueDate,\r\n    daysOverdue: overdue.daysOverdue,\r\n    stage: r.stage || \"queued\",\r\n    classification: r.classification || null,\r\n    replyText: r.repliedAt ? (r.replyText || \"\") : null,\r\n    replyChannel: r.replyChannel || null,\r\n    failureReason: r.failureReason || null,\r\n    draftEmail: r.draftEmail || null,\r\n    draftWhatsapp: r.draftWhatsapp || null,\r\n    updatedAt: r.updatedAt || new Date().toISOString(),\r\n    waStatus: r.waStatus || null,\r\n    waOptIn: truthy(r.waOptIn),\r\n    waOptOut: truthy(r.waOptOut),\r\n    nextActionAt: pickYmd(r.nextActionAt),\r\n    followupBucket: pickBucket(r.followupBucket),\r\n    followupCount: pickInt(r.followupCount, 0),\r\n    cadenceState: pickCadenceState(r.cadenceState),\r\n    promiseDate: pickYmd(r.promiseDate),\r\n    lastTouchAt: pickLastTouchAt(r.lastTouchAt),\r\n  };\r\n}\r\n\r\nfunction pickYmd(v) {\r\n  if (v == null || v === \"\") return null;\r\n  const s = String(v).trim().slice(0, 10);\r\n  return /^\\d{4}-\\d{2}-\\d{2}$/.test(s) ? s : null;\r\n}\r\n\r\nfunction pickBucket(v) {\r\n  if (v == null || v === \"\") return null;\r\n  const s = String(v).trim();\r\n  return s === \"W1\" || s === \"W2\" || s === \"W3\" || s === \"W4\" ? s : null;\r\n}\r\n\r\nfunction pickCadenceState(v) {\r\n  if (v == null || v === \"\") return null;\r\n  const s = String(v).trim();\r\n  return s === \"active\" || s === \"paused\" || s === \"closed\" ? s : null;\r\n}\r\n\r\nfunction pickInt(v, fallback) {\r\n  const n = Number(v);\r\n  return Number.isFinite(n) ? Math.floor(n) : fallback;\r\n}\r\n\r\nfunction pickLastTouchAt(v) {\r\n  if (v == null || v === \"\") return null;\r\n  const n = Number(v);\r\n  if (Number.isFinite(n) && n > 0) return n;\r\n  const t = Date.parse(String(v));\r\n  return Number.isFinite(t) ? t : null;\r\n}\n/**\r\n * Follow-up cadence policy — keep in sync with pasted copies in n8n Code nodes.\r\n * Reuses istYmd()/addCalendarDays() already declared above from the pasted normalize-invoice.js block (n8n Code nodes cannot require() local files).\r\n */\r\nconst BUCKET_DAYS = { W1: 7, W2: 14, W3: 21, W4: 28 };\r\n\r\nfunction parseYmd(s) {\r\n  if (!s || typeof s !== \"string\") return null;\r\n  const t = s.trim().slice(0, 10);\r\n  return /^\\d{4}-\\d{2}-\\d{2}$/.test(t) ? t : null;\r\n}\r\n\r\nfunction diffDays(laterYmd, earlierYmd) {\r\n  const a = laterYmd.split(\"-\").map(Number);\r\n  const b = earlierYmd.split(\"-\").map(Number);\r\n  return Math.round((Date.UTC(a[0], a[1] - 1, a[2]) - Date.UTC(b[0], b[1] - 1, b[2])) / 86400000);\r\n}\r\n\r\nfunction bucketLabelForDays(days) {\r\n  if (days <= 7) return \"W1\";\r\n  if (days <= 14) return \"W2\";\r\n  if (days <= 21) return \"W3\";\r\n  return \"W4\";\r\n}\r\n\r\n/**\r\n * @param {object} opts\r\n * @returns {{ nextActionAt: string|null, followupBucket: string|null, cadenceState: string, reason: string, promiseDate?: string|null }}\r\n */\r\nfunction computeNextAction(opts) {\r\n  const today = istYmd(new Date());\r\n  const tomorrow = addCalendarDays(today, 1);\r\n\r\n  const classification = opts.classification || \"no_response\";\r\n  const promiseDate = parseYmd(opts.promiseDate);\r\n  const promiseConfidence = Number(opts.promiseConfidence ?? 0);\r\n  const daysOverdue = Number(opts.daysOverdue ?? 0);\r\n  const amountRemaining = Number(opts.amountRemaining ?? 0);\r\n  const followupCount = Number(opts.followupCount ?? 0);\r\n  const waOptOut = !!opts.waOptOut;\r\n  const email = String(opts.email || \"\").trim();\r\n\r\n  const maxTouches = Number(opts.maxTouches ?? 4);\r\n  const highValue = Number(opts.highValue ?? 100000);\r\n\r\n  if (amountRemaining <= 0) {\r\n    return {\r\n      nextActionAt: null,\r\n      followupBucket: null,\r\n      cadenceState: \"closed\",\r\n      reason: \"amount_remaining_zero\",\r\n      promiseDate: promiseDate || null,\r\n    };\r\n  }\r\n\r\n  if (waOptOut && !email) {\r\n    return {\r\n      nextActionAt: null,\r\n      followupBucket: null,\r\n      cadenceState: \"paused\",\r\n      reason: \"no_reachable_channel\",\r\n      promiseDate: promiseDate || null,\r\n    };\r\n  }\r\n\r\n  if (classification === \"dispute\") {\r\n    return {\r\n      nextActionAt: addCalendarDays(today, 28),\r\n      followupBucket: \"W4\",\r\n      cadenceState: \"paused\",\r\n      reason: \"dispute_paused_internal_resurface_28d\",\r\n      promiseDate: promiseDate || null,\r\n    };\r\n  }\r\n\r\n  let nextActionAt = null;\r\n  let followupBucket = null;\r\n  let cadenceState = \"active\";\r\n  let reason = classification;\r\n  const outPromiseDate = promiseDate && promiseConfidence >= 0.6 ? promiseDate : null;\r\n\r\n  if (classification === \"promise\" && promiseDate && promiseConfidence >= 0.6) {\r\n    nextActionAt = addCalendarDays(promiseDate, 2);\r\n    followupBucket = bucketLabelForDays(diffDays(nextActionAt, today));\r\n    reason = \"promise_with_date\";\r\n  } else if (classification === \"promise\") {\r\n    nextActionAt = addCalendarDays(today, BUCKET_DAYS.W1);\r\n    followupBucket = \"W1\";\r\n    reason = \"promise_no_date_w1\";\r\n  } else if (classification === \"paid\") {\r\n    nextActionAt = addCalendarDays(today, BUCKET_DAYS.W1);\r\n    followupBucket = \"W1\";\r\n    reason = \"paid_verify_w1\";\r\n  } else {\r\n    const ladder = [\"W1\", \"W2\", \"W3\", \"W4\"];\r\n    const idx = Math.min(Math.max(0, followupCount), ladder.length - 1);\r\n    followupBucket = ladder[idx];\r\n    if (followupCount >= maxTouches) {\r\n      return {\r\n        nextActionAt: null,\r\n        followupBucket,\r\n        cadenceState: \"closed\",\r\n        reason: \"max_touches_closed\",\r\n        promiseDate: outPromiseDate,\r\n      };\r\n    }\r\n    nextActionAt = addCalendarDays(today, BUCKET_DAYS[followupBucket]);\r\n    reason = \"no_response_ladder_\" + followupBucket;\r\n  }\r\n\r\n  if (daysOverdue >= 60 || amountRemaining >= highValue) {\r\n    const shifted = addCalendarDays(nextActionAt, -7);\r\n    nextActionAt = shifted < tomorrow ? tomorrow : shifted;\r\n    if (reason.startsWith(\"no_response_ladder\")) {\r\n      followupBucket = bucketLabelForDays(diffDays(nextActionAt, today));\r\n    }\r\n    reason += \"|high_value_or_overdue_tightened\";\r\n  }\r\n\r\n  if (followupCount >= maxTouches) {\r\n    cadenceState = \"closed\";\r\n    reason = \"max_touches_closed\";\r\n  }\r\n\r\n  return {\r\n    nextActionAt,\r\n    followupBucket,\r\n    cadenceState,\r\n    reason,\r\n    promiseDate: outPromiseDate,\r\n  };\r\n}\r\n\r\n/** First (non-retry) send stamps W1 +7d. */\r\nfunction initCadenceAtSend() {\r\n  const today = istYmd(new Date());\r\n  return {\r\n    cadenceState: \"active\",\r\n    followupBucket: \"W1\",\r\n    nextActionAt: addCalendarDays(today, 7),\r\n    followupCount: 0,\r\n    promiseDate: null,\r\n    lastTouchAt: null,\r\n  };\r\n}\nconst inv = $('Request redraft').item.json.invoice || $('Loop Over Items').item.json;\nfunction truthy(v) {\n  if (typeof v === 'boolean') return v;\n  if (typeof v === 'number') return v !== 0;\n  if (typeof v === 'string') {\n    const s = v.trim().toUpperCase();\n    return s === 'TRUE' || s === '1' || s === 'YES';\n  }\n  return false;\n}\nfunction pickInt(v, fb) {\n  const n = Number(v);\n  return Number.isFinite(n) ? Math.floor(n) : fb;\n}\nconst overdue = deriveOverdue(inv);\nconst classification = inv.classification || 'no_response';\nconst curCount = pickInt(inv.followupCount, 0);\nconst action = computeNextAction({\n  classification,\n  promiseDate: inv.promiseDate || null,\n  promiseConfidence: 1,\n  daysOverdue: overdue.daysOverdue,\n  amountRemaining: Number(inv.amountRemaining || 0),\n  followupCount: curCount,\n  waOptOut: truthy(inv.waOptOut),\n  email: String(inv.email || ''),\n  maxTouches: Number($env.FOLLOWUP_MAX_TOUCHES || 4),\n  highValue: Number($env.FOLLOWUP_HIGH_VALUE || 100000),\n});\nconst now = new Date().toISOString();\nconst nowMs = Date.now();\nconst newCount = curCount + 1;\nreturn {\n  json: {\n    id: inv.id,\n    stage: 'drafted',\n    emailSentAt: 'RESET',\n    waSentAt: 'RESET',\n    waStatus: '',\n    waMessageId: '',\n    followupCount: newCount,\n    nextActionAt: action.nextActionAt || '',\n    followupBucket: action.followupBucket || '',\n    cadenceState: action.cadenceState || 'active',\n    promiseDate: inv.promiseDate || '',\n    lastTouchAt: nowMs,\n    updatedAt: now,\n    cadenceReason: action.reason,\n    classification,\n    logReason: action.reason,\n    logBucket: action.followupBucket,\n    escalate: action.cadenceState === 'closed' && newCount >= Number($env.FOLLOWUP_MAX_TOUCHES || 4),\n  },\n};\n"
+      }
+    },
+    {
+      "id": "sheets-rearm-1",
+      "name": "Re-arm row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2860,
+        -80
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "value": {
+            "id": "={{ $json.id }}",
+            "stage": "drafted",
+            "emailSentAt": "RESET",
+            "waSentAt": "RESET",
+            "waStatus": "",
+            "waMessageId": "",
+            "followupCount": "={{ $json.followupCount }}",
+            "nextActionAt": "={{ $json.nextActionAt }}",
+            "followupBucket": "={{ $json.followupBucket }}",
+            "cadenceState": "={{ $json.cadenceState }}",
+            "promiseDate": "={{ $json.promiseDate }}",
+            "lastTouchAt": "={{ $json.lastTouchAt }}",
+            "updatedAt": "={{ $json.updatedAt }}"
+          }
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "sheets-log-followup-1",
+      "name": "Append followup_log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        3120,
+        -80
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "followup_log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISO() }}",
+            "id": "={{ $json.id }}",
+            "followupCount": "={{ $json.followupCount }}",
+            "bucket": "={{ $json.logBucket }}",
+            "nextActionAt": "={{ $json.nextActionAt }}",
+            "classification": "={{ $json.classification }}",
+            "reason": "={{ $json.logReason }}",
+            "channel": "scheduler"
+          }
+        },
+        "options": {
+          "useAppend": true
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "if-escalate-1",
+      "name": "Escalate exhausted?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3380,
+        -80
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.escalate ? 'yes' : 'no' }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "http-teams-escalate-1",
+      "name": "Notify Teams escalations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3640,
+        -160
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TEAMS_WEBHOOK_ESCALATIONS || $env.TEAMS_INCOMING_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: 'Follow-up exhausted for invoice ' + $json.id + ' — max touches reached.' }) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enabled?": {
+      "main": [
+        [
+          {
+            "node": "Read invoices",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Read invoices": {
+      "main": [
+        [
+          {
+            "node": "Select due",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select due": {
+      "main": [
+        [
+          {
+            "node": "Close row?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Close row?": {
+      "main": [
+        [
+          {
+            "node": "Close zero balance",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Close zero balance": {
+      "main": []
+    },
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Request redraft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request redraft": {
+      "main": [
+        [
+          {
+            "node": "Redraft ok?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redraft ok?": {
+      "main": [
+        [
+          {
+            "node": "Compute next action",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log redraft failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log redraft failed": {
+      "main": [
+        [
+          {
+            "node": "Append redraft failed log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append redraft failed log": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute next action": {
+      "main": [
+        [
+          {
+            "node": "Re-arm row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Re-arm row": {
+      "main": [
+        [
+          {
+            "node": "Append followup_log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append followup_log": {
+      "main": [
+        [
+          {
+            "node": "Escalate exhausted?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escalate exhausted?": {
+      "main": [
+        [
+          {
+            "node": "Notify Teams escalations",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Teams escalations": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "dunnly"
+  }
+}

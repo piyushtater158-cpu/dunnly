@@ -20,6 +20,11 @@ export type Classification = "paid" | "promise" | "dispute" | "no_response" | nu
 
 export type ReplyChannel = "email" | "whatsapp" | "manual" | null;
 
+/** Follow-up cadence loop control. See n8n/followup-policy.js for the state machine. */
+export type CadenceState = "active" | "paused" | "closed" | null;
+
+export type FollowupBucket = "W1" | "W2" | "W3" | "W4" | null;
+
 export interface Invoice {
   id: string;
   customer: string;
@@ -46,6 +51,18 @@ export interface Invoice {
   waStatus: string | null;
   waOptIn: boolean;
   waOptOut: boolean;
+  /** ISO YYYY-MM-DD — when the next automated touch is due. Null until first sent. */
+  nextActionAt: string | null;
+  /** Which follow-up window was chosen (display + audit). */
+  followupBucket: FollowupBucket;
+  /** Automated touches so far (incremented by dunnly-followup, not by a manual send). */
+  followupCount: number;
+  /** Follow-up loop control. Null until first sent (cadence not yet initialized). */
+  cadenceState: CadenceState;
+  /** ISO YYYY-MM-DD extracted from the customer's reply, or null. */
+  promiseDate: string | null;
+  /** epoch ms — same-day double-run guard for dunnly-followup. Null until first touched. */
+  lastTouchAt: number | null;
 }
 
 /** Pending / keyword inbound WhatsApp events (unmatched, START, STOP). */
@@ -167,6 +184,15 @@ function seed(): Invoice[] {
       waStatus: null,
       waOptIn: isDemo,
       waOptOut: false,
+      // Cadence starts null for pre-existing seed rows — mirrors real behavior:
+      // the clock is only initialized the next time this row is actually sent
+      // (see app/api/invoices/[id]/send/route.ts mock branch) or classified.
+      nextActionAt: null,
+      followupBucket: null,
+      followupCount: 0,
+      cadenceState: null,
+      promiseDate: null,
+      lastTouchAt: null,
     };
     if (base.stage !== "queued") {
       base.draftEmail = emailFor(base);

@@ -44,6 +44,18 @@
     "updatedAt": { "type": ["string", "number"] },
     "waStatus": { "type": ["string", "null"] },
     "waOptIn": { "type": "boolean" },
-    "waOptOut": { "type": "boolean" }
+    "waOptOut": { "type": "boolean" },
+    "nextActionAt": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$|^$" },
+    "followupBucket": {
+      "type": ["string", "null"],
+      "enum": ["W1", "W2", "W3", "W4", null, ""]
+    },
+    "followupCount": { "type": ["integer", "number"], "minimum": 0 },
+    "cadenceState": {
+      "type": ["string", "null"],
+      "enum": ["active", "paused", "closed", null, ""]
+    },
+    "promiseDate": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$|^$" },
+    "lastTouchAt": { "type": ["string", "number", "null"] }
   }
 }

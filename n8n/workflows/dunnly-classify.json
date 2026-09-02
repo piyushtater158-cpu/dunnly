@@ -133,7 +133,7 @@
         "nodeCredentialType": "openRouterApi",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: \"openai/gpt-4o-mini\", response_format: { type: \"json_object\" }, messages: [ { role: \"system\", content: \"Classify an AR collections customer reply into exactly one of: paid, promise, dispute, no_response.\\n\\nRules:\\n- Use ONLY the customer's reply text. Do not invent facts, dates, amounts, or invoice details.\\n- Do NOT rewrite or invent reply text. Your output must be classification only.\\n- Reply with strict JSON only (no markdown): {\\\"classification\\\": string}\\n- If the reply is empty, unclear, off-topic, or silence, use no_response.\\n- paid = customer states payment already made / remitted / paid.\\n- promise = customer commits to pay (with or without a date).\\n- dispute = customer contests amount, invoice, goods, or refuses payment for cause.\\n- no_response = empty, unrelated, or cannot determine intent.\" }, { role: \"user\", content: $('Webhook').item.json.body.replyText } ] }) }}",
+        "jsonBody": "={{ JSON.stringify({ model: \"openai/gpt-4o-mini\", response_format: { type: \"json_object\" }, messages: [ { role: \"system\", content: \"Classify an AR collections customer reply into exactly one of: paid, promise, dispute, no_response.\\n\\nRules:\\n- Use ONLY the customer's reply text. Do not invent facts, dates, amounts, or invoice details.\\n- Do NOT rewrite or invent reply text. Your output must be classification only plus optional promiseDate extraction.\\n- Reply with strict JSON only (no markdown): {\\\"classification\\\": string, \\\"promiseDate\\\": string|null, \\\"promiseConfidence\\\": number}\\n- promiseDate = ISO YYYY-MM-DD the customer committed to, resolved against today's date, else null.\\n- promiseConfidence = 0.0–1.0 confidence in promiseDate.\\n- If the reply is empty, unclear, off-topic, or silence, use no_response with promiseDate null.\\n- paid = customer states payment already made / remitted / paid.\\n- promise = customer commits to pay (with or without a date).\\n- dispute = customer contests amount, invoice, goods, or refuses payment for cause.\\n- no_response = empty, unrelated, or cannot determine intent.\" }, { role: \"user\", content: \"Today's date (IST): {{ $now.setZone('Asia/Kolkata').toFormat('yyyy-MM-dd') }}\\n\\nReply:\\n{{ $('Webhook').item.json.body.replyText }}\" } ] }) }}",
         "options": {}
       },
       "credentials": {
@@ -154,7 +154,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "if ($json.error) {\n  return { json: { classification: null, failureReason: \"LLM classify failed: \" + JSON.stringify($json.error).slice(0, 300) } };\n}\nconst content = $json.choices?.[0]?.message?.content || \"{}\";\nlet parsed = {};\ntry { parsed = JSON.parse(content); } catch (e) { parsed = {}; }\nconst allowed = [\"paid\", \"promise\", \"dispute\", \"no_response\"];\nconst cls = allowed.includes(parsed.classification) ? parsed.classification : \"no_response\";\nreturn { json: { classification: cls } };"
+        "jsCode": "if ($json.error) {\n  return { json: { classification: null, promiseDate: null, promiseConfidence: 0, failureReason: \"LLM classify failed: \" + JSON.stringify($json.error).slice(0, 300) } };\n}\nconst content = $json.choices?.[0]?.message?.content || \"{}\";\nlet parsed = {};\ntry { parsed = JSON.parse(content); } catch (e) { parsed = {}; }\nconst allowed = [\"paid\", \"promise\", \"dispute\", \"no_response\"];\nconst cls = allowed.includes(parsed.classification) ? parsed.classification : \"no_response\";\nlet promiseDate = parsed.promiseDate || null;\nlet promiseConfidence = Number(parsed.promiseConfidence);\nif (!Number.isFinite(promiseConfidence)) promiseConfidence = 0;\nconst today = $now.setZone('Asia/Kolkata').toFormat('yyyy-MM-dd');\nconst maxFuture = $now.setZone('Asia/Kolkata').plus({ days: 365 }).toFormat('yyyy-MM-dd');\nif (!promiseDate || !/^\\d{4}-\\d{2}-\\d{2}$/.test(String(promiseDate)) || promiseDate < today || promiseDate > maxFuture || promiseConfidence < 0.6) {\n  promiseDate = null;\n}\nreturn { json: { classification: cls, promiseDate, promiseConfidence } };"
       }
     },
     {
@@ -257,7 +257,11 @@
             "stage": "notified",
             "classification": "={{ $('Should notify Teams?').item.json.classification }}",
             "failureReason": "",
-            "updatedAt": "={{ $now.toISO() }}"
+            "updatedAt": "={{ $now.toISO() }}",
+            "nextActionAt": "={{ $('Should notify Teams?').item.json.nextActionAt || '' }}",
+            "followupBucket": "={{ $('Should notify Teams?').item.json.followupBucket || '' }}",
+            "cadenceState": "={{ $('Should notify Teams?').item.json.cadenceState || '' }}",
+            "promiseDate": "={{ $('Should notify Teams?').item.json.promiseDate || '' }}"
           }
         },
         "options": {}
@@ -301,7 +305,11 @@
             "stage": "classified",
             "classification": "={{$json.classification}}",
             "failureReason": "",
-            "updatedAt": "={{ $now.toISO() }}"
+            "updatedAt": "={{ $now.toISO() }}",
+            "nextActionAt": "={{$json.nextActionAt || ''}}",
+            "followupBucket": "={{$json.followupBucket || ''}}",
+            "cadenceState": "={{$json.cadenceState || ''}}",
+            "promiseDate": "={{$json.promiseDate || ''}}"
           }
         },
         "options": {}
@@ -459,7 +467,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const r = $json;\nfunction istYmd(asOf) {\n  const d = asOf || new Date();\n  return new Intl.DateTimeFormat(\"en-CA\", {\n    timeZone: \"Asia/Kolkata\",\n    year: \"numeric\",\n    month: \"2-digit\",\n    day: \"2-digit\",\n  }).format(d);\n}\nfunction parseSupplyDate(raw) {\n  if (raw == null || raw === \"\") return null;\n  if (typeof raw === \"number\" && Number.isFinite(raw)) {\n    const ms = Math.round((raw - 25569) * 86400 * 1000);\n    const d = new Date(ms);\n    if (!Number.isFinite(d.getTime())) return null;\n    return d.toISOString().slice(0, 10);\n  }\n  const s = String(raw).trim().replace(/^'/, \"\");\n  if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s.slice(0, 10);\n  const dmy = s.match(/^(\\d{1,2})[\\/\\-.](\\d{1,2})[\\/\\-.](\\d{4})$/);\n  if (dmy) {\n    return dmy[3] + \"-\" + dmy[2].padStart(2, \"0\") + \"-\" + dmy[1].padStart(2, \"0\");\n  }\n  const t = Date.parse(s);\n  if (Number.isFinite(t)) return new Date(t).toISOString().slice(0, 10);\n  return null;\n}\nfunction addCalendarDays(ymd, days) {\n  const parts = ymd.split(\"-\").map(Number);\n  const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));\n  dt.setUTCDate(dt.getUTCDate() + days);\n  return dt.toISOString().slice(0, 10);\n}\nfunction diffCalendarDays(laterYmd, earlierYmd) {\n  const a = laterYmd.split(\"-\").map(Number);\n  const b = earlierYmd.split(\"-\").map(Number);\n  return Math.round((Date.UTC(a[0], a[1] - 1, a[2]) - Date.UTC(b[0], b[1] - 1, b[2])) / 86400000);\n}\nfunction pickSupplyCredit(r) {\n  const dateOfSupply = r.dateOfSupply ?? r[\"Date of Supply\"] ?? r.DateOfSupply ?? r.date_of_supply ?? null;\n  const creditDays = r.creditDays ?? r.creditLine ?? r[\"Credit Line\"] ?? r[\"Credit Days\"] ?? r.credit_days ?? null;\n  return { dateOfSupply, creditDays };\n}\nfunction deriveOverdue(r) {\n  const picked = pickSupplyCredit(r);\n  const supply = parseSupplyDate(picked.dateOfSupply);\n  const creditRaw = picked.creditDays;\n  const credit = creditRaw === \"\" || creditRaw == null ? null : Number(creditRaw);\n  if (supply != null && credit != null && Number.isFinite(credit) && credit >= 0) {\n    const dueDate = addCalendarDays(supply, Math.floor(credit));\n    const today = istYmd(new Date());\n    return {\n      dateOfSupply: supply,\n      creditDays: Math.floor(credit),\n      dueDate,\n      daysOverdue: Math.max(0, diffCalendarDays(today, dueDate)),\n    };\n  }\n  const stored = Number(r.daysOverdue || 0);\n  return {\n    dateOfSupply: supply,\n    creditDays: credit != null && Number.isFinite(credit) ? Math.floor(credit) : null,\n    dueDate: null,\n    daysOverdue: Number.isFinite(stored) ? Math.max(0, Math.floor(stored)) : 0,\n  };\n}\nfunction truthy(v) {\n  if (typeof v === \"boolean\") return v;\n  if (typeof v === \"number\") return v !== 0;\n  if (typeof v === \"string\") {\n    const s = v.trim().toUpperCase();\n    return s === \"TRUE\" || s === \"1\" || s === \"YES\";\n  }\n  return false;\n}\nconst overdue = deriveOverdue(r);\nconst invoice = {\n  id: String(r.id || \"\"),\n  customer: String(r.customer || \"\"),\n  email: String(r.email || \"\"),\n  phone: String(r.phone || \"\").replace(/^'/, \"\"),\n  amountDue: Number(r.amountDue || 0),\n  amountRemaining: Number(r.amountRemaining || 0),\n  dateOfSupply: overdue.dateOfSupply,\n  creditDays: overdue.creditDays,\n  dueDate: overdue.dueDate,\n  daysOverdue: overdue.daysOverdue,\n  stage: r.stage || \"queued\",\n  classification: r.classification || null,\n  replyText: r.repliedAt ? (r.replyText || \"\") : null,\n  failureReason: r.failureReason || null,\n  draftEmail: r.draftEmail || null,\n  draftWhatsapp: r.draftWhatsapp || null,\n  updatedAt: r.updatedAt || new Date().toISOString(),\n  waStatus: r.waStatus || null,\n  waOptIn: truthy(r.waOptIn),\n  waOptOut: truthy(r.waOptOut),\n};\nif (invoice.stage === \"failed\") {\n  return { json: { ok: false, step: \"notify\", failureReason: invoice.failureReason, invoice } };\n}\nreturn { json: { ok: true, invoice } };"
+        "jsCode": "/**\r\n * Shared invoice normalize — keep in sync across dunnly-read / draft / send / classify / inbound.\r\n * Returns one Invoice-shaped object from a Sheets row.\r\n * Derives dueDate + daysOverdue from dateOfSupply + creditDays (IST calendar).\r\n */\r\n\r\nfunction istYmd(asOf) {\r\n  const d = asOf || new Date();\r\n  return new Intl.DateTimeFormat(\"en-CA\", {\r\n    timeZone: \"Asia/Kolkata\",\r\n    year: \"numeric\",\r\n    month: \"2-digit\",\r\n    day: \"2-digit\",\r\n  }).format(d);\r\n}\r\n\r\nfunction parseSupplyDate(raw) {\r\n  if (raw == null || raw === \"\") return null;\r\n  if (typeof raw === \"number\" && Number.isFinite(raw)) {\r\n    const ms = Math.round((raw - 25569) * 86400 * 1000);\r\n    const d = new Date(ms);\r\n    if (!Number.isFinite(d.getTime())) return null;\r\n    return d.toISOString().slice(0, 10);\r\n  }\r\n  const s = String(raw).trim().replace(/^'/, \"\");\r\n  if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s.slice(0, 10);\r\n  const dmy = s.match(/^(\\d{1,2})[\\/\\-.](\\d{1,2})[\\/\\-.](\\d{4})$/);\r\n  if (dmy) {\r\n    return dmy[3] + \"-\" + dmy[2].padStart(2, \"0\") + \"-\" + dmy[1].padStart(2, \"0\");\r\n  }\r\n  const t = Date.parse(s);\r\n  if (Number.isFinite(t)) return new Date(t).toISOString().slice(0, 10);\r\n  return null;\r\n}\r\n\r\nfunction addCalendarDays(ymd, days) {\r\n  const parts = ymd.split(\"-\").map(Number);\r\n  const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));\r\n  dt.setUTCDate(dt.getUTCDate() + days);\r\n  return dt.toISOString().slice(0, 10);\r\n}\r\n\r\nfunction diffCalendarDays(laterYmd, earlierYmd) {\r\n  const a = laterYmd.split(\"-\").map(Number);\r\n  const b = earlierYmd.split(\"-\").map(Number);\r\n  const msA = Date.UTC(a[0], a[1] - 1, a[2]);\r\n  const msB = Date.UTC(b[0], b[1] - 1, b[2]);\r\n  return Math.round((msA - msB) / 86400000);\r\n}\r\n\r\nfunction pickSupplyCredit(r) {\r\n  const dateOfSupply =\r\n    r.dateOfSupply ?? r[\"Date of Supply\"] ?? r[\"Date of supply\"] ?? r.DateOfSupply ?? r.date_of_supply ?? null;\r\n  const creditDays =\r\n    r.creditDays ?? r.creditLine ?? r[\"Credit Line\"] ?? r[\"Credit line\"] ?? r[\"Credit Days\"] ?? r.credit_days ?? null;\r\n  return { dateOfSupply, creditDays };\r\n}\r\n\r\nfunction pickStoredOverdue(r) {\r\n  if (r.daysOverdue != null && r.daysOverdue !== \"\") return r.daysOverdue;\r\n  if (r[\"Days post due date \"] != null && r[\"Days post due date \"] !== \"\") return r[\"Days post due date \"];\r\n  for (const k of Object.keys(r)) {\r\n    if (String(k).trim() === \"Days post due date\" && r[k] != null && r[k] !== \"\") return r[k];\r\n  }\r\n  return 0;\r\n}\r\n\r\nfunction deriveOverdue(r) {\r\n  const picked = pickSupplyCredit(r);\r\n  const supply = parseSupplyDate(picked.dateOfSupply);\r\n  const creditRaw = picked.creditDays;\r\n  const credit = creditRaw === \"\" || creditRaw == null ? null : Number(creditRaw);\r\n  if (supply != null && credit != null && Number.isFinite(credit) && credit >= 0) {\r\n    const dueDate = addCalendarDays(supply, Math.floor(credit));\r\n    const today = istYmd(new Date());\r\n    return {\r\n      dateOfSupply: supply,\r\n      creditDays: Math.floor(credit),\r\n      dueDate,\r\n      daysOverdue: Math.max(0, diffCalendarDays(today, dueDate)),\r\n    };\r\n  }\r\n  const stored = Number(pickStoredOverdue(r) || 0);\r\n  return {\r\n    dateOfSupply: supply,\r\n    creditDays: credit != null && Number.isFinite(credit) ? Math.floor(credit) : null,\r\n    dueDate: null,\r\n    daysOverdue: Number.isFinite(stored) ? Math.max(0, Math.floor(stored)) : 0,\r\n  };\r\n}\r\n\r\nfunction normalizeInvoiceRow(r) {\r\n  const truthy = (v) => {\r\n    if (typeof v === \"boolean\") return v;\r\n    if (typeof v === \"number\") return v !== 0;\r\n    if (typeof v === \"string\") {\r\n      const s = v.trim().toUpperCase();\r\n      return s === \"TRUE\" || s === \"1\" || s === \"YES\";\r\n    }\r\n    return false;\r\n  };\r\n  const overdue = deriveOverdue(r);\r\n  return {\r\n    id: String(r.id || \"\"),\r\n    customer: String(r.customer || \"\"),\r\n    email: String(r.email || \"\"),\r\n    phone: String(r.phone || \"\").replace(/^'/, \"\"),\r\n    amountDue: Number(r.amountDue || 0),\r\n    amountRemaining: Number(r.amountRemaining || 0),\r\n    dateOfSupply: overdue.dateOfSupply,\r\n    creditDays: overdue.creditDays,\r\n    dueDate: overdue.dueDate,\r\n    daysOverdue: overdue.daysOverdue,\r\n    stage: r.stage || \"queued\",\r\n    classification: r.classification || null,\r\n    replyText: r.repliedAt ? (r.replyText || \"\") : null,\r\n    replyChannel: r.replyChannel || null,\r\n    failureReason: r.failureReason || null,\r\n    draftEmail: r.draftEmail || null,\r\n    draftWhatsapp: r.draftWhatsapp || null,\r\n    updatedAt: r.updatedAt || new Date().toISOString(),\r\n    waStatus: r.waStatus || null,\r\n    waOptIn: truthy(r.waOptIn),\r\n    waOptOut: truthy(r.waOptOut),\r\n    nextActionAt: pickYmd(r.nextActionAt),\r\n    followupBucket: pickBucket(r.followupBucket),\r\n    followupCount: pickInt(r.followupCount, 0),\r\n    cadenceState: pickCadenceState(r.cadenceState),\r\n    promiseDate: pickYmd(r.promiseDate),\r\n    lastTouchAt: pickLastTouchAt(r.lastTouchAt),\r\n  };\r\n}\r\n\r\nfunction pickYmd(v) {\r\n  if (v == null || v === \"\") return null;\r\n  const s = String(v).trim().slice(0, 10);\r\n  return /^\\d{4}-\\d{2}-\\d{2}$/.test(s) ? s : null;\r\n}\r\n\r\nfunction pickBucket(v) {\r\n  if (v == null || v === \"\") return null;\r\n  const s = String(v).trim();\r\n  return s === \"W1\" || s === \"W2\" || s === \"W3\" || s === \"W4\" ? s : null;\r\n}\r\n\r\nfunction pickCadenceState(v) {\r\n  if (v == null || v === \"\") return null;\r\n  const s = String(v).trim();\r\n  return s === \"active\" || s === \"paused\" || s === \"closed\" ? s : null;\r\n}\r\n\r\nfunction pickInt(v, fallback) {\r\n  const n = Number(v);\r\n  return Number.isFinite(n) ? Math.floor(n) : fallback;\r\n}\r\n\r\nfunction pickLastTouchAt(v) {\r\n  if (v == null || v === \"\") return null;\r\n  const n = Number(v);\r\n  if (Number.isFinite(n) && n > 0) return n;\r\n  const t = Date.parse(String(v));\r\n  return Number.isFinite(t) ? t : null;\r\n}\nconst r = $json;\nconst overdue = deriveOverdue(r);\nconst invoice = {\n  id: String(r.id || \"\"),\n  customer: String(r.customer || \"\"),\n  email: String(r.email || \"\"),\n  phone: String(r.phone || \"\").replace(/^'/, \"\"),\n  amountDue: Number(r.amountDue || 0),\n  amountRemaining: Number(r.amountRemaining || 0),\n  dateOfSupply: overdue.dateOfSupply,\n  creditDays: overdue.creditDays,\n  dueDate: overdue.dueDate,\n  daysOverdue: overdue.daysOverdue,\n  stage: r.stage || \"queued\",\n  classification: r.classification || null,\n  replyText: r.repliedAt ? (r.replyText || \"\") : null,\n  replyChannel: r.replyChannel || null,\n  failureReason: r.failureReason || null,\n  draftEmail: r.draftEmail || null,\n  draftWhatsapp: r.draftWhatsapp || null,\n  updatedAt: r.updatedAt || new Date().toISOString(),\n  waStatus: r.waStatus || null,\n  waOptIn: truthy(r.waOptIn),\n  waOptOut: truthy(r.waOptOut),\n  nextActionAt: pickYmd(r.nextActionAt),\n  followupBucket: pickBucket(r.followupBucket),\n  followupCount: pickInt(r.followupCount, 0),\n  cadenceState: pickCadenceState(r.cadenceState),\n  promiseDate: pickYmd(r.promiseDate),\n  lastTouchAt: pickLastTouchAt(r.lastTouchAt),\n};\nif (invoice.stage === \"failed\") {\n  return { json: { ok: false, step: \"notify\", failureReason: invoice.failureReason, invoice } };\n}\nreturn { json: { ok: true, invoice } };\n"
       }
     },
     {
@@ -554,6 +562,59 @@
           ]
         }
       }
+    },
+    {
+      "id": "sheets-read-cadence-1",
+      "name": "Read invoice for cadence",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        400,
+        0
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1qk-kY0gwgDU9Sef-lvDLRZEe-W-m1AUZtm4inJb9ph0",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "invoices",
+          "mode": "name"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "id",
+              "lookupValue": "={{$('Webhook').item.json.body.invoiceId}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "XTaQHKonHKfxw3GX",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "code-compute-next-1",
+      "name": "Compute next action",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "/**\r\n * Shared invoice normalize — keep in sync across dunnly-read / draft / send / classify / inbound.\r\n * Returns one Invoice-shaped object from a Sheets row.\r\n * Derives dueDate + daysOverdue from dateOfSupply + creditDays (IST calendar).\r\n */\r\n\r\nfunction istYmd(asOf) {\r\n  const d = asOf || new Date();\r\n  return new Intl.DateTimeFormat(\"en-CA\", {\r\n    timeZone: \"Asia/Kolkata\",\r\n    year: \"numeric\",\r\n    month: \"2-digit\",\r\n    day: \"2-digit\",\r\n  }).format(d);\r\n}\r\n\r\nfunction parseSupplyDate(raw) {\r\n  if (raw == null || raw === \"\") return null;\r\n  if (typeof raw === \"number\" && Number.isFinite(raw)) {\r\n    const ms = Math.round((raw - 25569) * 86400 * 1000);\r\n    const d = new Date(ms);\r\n    if (!Number.isFinite(d.getTime())) return null;\r\n    return d.toISOString().slice(0, 10);\r\n  }\r\n  const s = String(raw).trim().replace(/^'/, \"\");\r\n  if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s.slice(0, 10);\r\n  const dmy = s.match(/^(\\d{1,2})[\\/\\-.](\\d{1,2})[\\/\\-.](\\d{4})$/);\r\n  if (dmy) {\r\n    return dmy[3] + \"-\" + dmy[2].padStart(2, \"0\") + \"-\" + dmy[1].padStart(2, \"0\");\r\n  }\r\n  const t = Date.parse(s);\r\n  if (Number.isFinite(t)) return new Date(t).toISOString().slice(0, 10);\r\n  return null;\r\n}\r\n\r\nfunction addCalendarDays(ymd, days) {\r\n  const parts = ymd.split(\"-\").map(Number);\r\n  const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));\r\n  dt.setUTCDate(dt.getUTCDate() + days);\r\n  return dt.toISOString().slice(0, 10);\r\n}\r\n\r\nfunction diffCalendarDays(laterYmd, earlierYmd) {\r\n  const a = laterYmd.split(\"-\").map(Number);\r\n  const b = earlierYmd.split(\"-\").map(Number);\r\n  const msA = Date.UTC(a[0], a[1] - 1, a[2]);\r\n  const msB = Date.UTC(b[0], b[1] - 1, b[2]);\r\n  return Math.round((msA - msB) / 86400000);\r\n}\r\n\r\nfunction pickSupplyCredit(r) {\r\n  const dateOfSupply =\r\n    r.dateOfSupply ?? r[\"Date of Supply\"] ?? r[\"Date of supply\"] ?? r.DateOfSupply ?? r.date_of_supply ?? null;\r\n  const creditDays =\r\n    r.creditDays ?? r.creditLine ?? r[\"Credit Line\"] ?? r[\"Credit line\"] ?? r[\"Credit Days\"] ?? r.credit_days ?? null;\r\n  return { dateOfSupply, creditDays };\r\n}\r\n\r\nfunction pickStoredOverdue(r) {\r\n  if (r.daysOverdue != null && r.daysOverdue !== \"\") return r.daysOverdue;\r\n  if (r[\"Days post due date \"] != null && r[\"Days post due date \"] !== \"\") return r[\"Days post due date \"];\r\n  for (const k of Object.keys(r)) {\r\n    if (String(k).trim() === \"Days post due date\" && r[k] != null && r[k] !== \"\") return r[k];\r\n  }\r\n  return 0;\r\n}\r\n\r\nfunction deriveOverdue(r) {\r\n  const picked = pickSupplyCredit(r);\r\n  const supply = parseSupplyDate(picked.dateOfSupply);\r\n  const creditRaw = picked.creditDays;\r\n  const credit = creditRaw === \"\" || creditRaw == null ? null : Number(creditRaw);\r\n  if (supply != null && credit != null && Number.isFinite(credit) && credit >= 0) {\r\n    const dueDate = addCalendarDays(supply, Math.floor(credit));\r\n    const today = istYmd(new Date());\r\n    return {\r\n      dateOfSupply: supply,\r\n      creditDays: Math.floor(credit),\r\n      dueDate,\r\n      daysOverdue: Math.max(0, diffCalendarDays(today, dueDate)),\r\n    };\r\n  }\r\n  const stored = Number(pickStoredOverdue(r) || 0);\r\n  return {\r\n    dateOfSupply: supply,\r\n    creditDays: credit != null && Number.isFinite(credit) ? Math.floor(credit) : null,\r\n    dueDate: null,\r\n    daysOverdue: Number.isFinite(stored) ? Math.max(0, Math.floor(stored)) : 0,\r\n  };\r\n}\r\n\r\nfunction normalizeInvoiceRow(r) {\r\n  const truthy = (v) => {\r\n    if (typeof v === \"boolean\") return v;\r\n    if (typeof v === \"number\") return v !== 0;\r\n    if (typeof v === \"string\") {\r\n      const s = v.trim().toUpperCase();\r\n      return s === \"TRUE\" || s === \"1\" || s === \"YES\";\r\n    }\r\n    return false;\r\n  };\r\n  const overdue = deriveOverdue(r);\r\n  return {\r\n    id: String(r.id || \"\"),\r\n    customer: String(r.customer || \"\"),\r\n    email: String(r.email || \"\"),\r\n    phone: String(r.phone || \"\").replace(/^'/, \"\"),\r\n    amountDue: Number(r.amountDue || 0),\r\n    amountRemaining: Number(r.amountRemaining || 0),\r\n    dateOfSupply: overdue.dateOfSupply,\r\n    creditDays: overdue.creditDays,\r\n    dueDate: overdue.dueDate,\r\n    daysOverdue: overdue.daysOverdue,\r\n    stage: r.stage || \"queued\",\r\n    classification: r.classification || null,\r\n    replyText: r.repliedAt ? (r.replyText || \"\") : null,\r\n    replyChannel: r.replyChannel || null,\r\n    failureReason: r.failureReason || null,\r\n    draftEmail: r.draftEmail || null,\r\n    draftWhatsapp: r.draftWhatsapp || null,\r\n    updatedAt: r.updatedAt || new Date().toISOString(),\r\n    waStatus: r.waStatus || null,\r\n    waOptIn: truthy(r.waOptIn),\r\n    waOptOut: truthy(r.waOptOut),\r\n    nextActionAt: pickYmd(r.nextActionAt),\r\n    followupBucket: pickBucket(r.followupBucket),\r\n    followupCount: pickInt(r.followupCount, 0),\r\n    cadenceState: pickCadenceState(r.cadenceState),\r\n    promiseDate: pickYmd(r.promiseDate),\r\n    lastTouchAt: pickLastTouchAt(r.lastTouchAt),\r\n  };\r\n}\r\n\r\nfunction pickYmd(v) {\r\n  if (v == null || v === \"\") return null;\r\n  const s = String(v).trim().slice(0, 10);\r\n  return /^\\d{4}-\\d{2}-\\d{2}$/.test(s) ? s : null;\r\n}\r\n\r\nfunction pickBucket(v) {\r\n  if (v == null || v === \"\") return null;\r\n  const s = String(v).trim();\r\n  return s === \"W1\" || s === \"W2\" || s === \"W3\" || s === \"W4\" ? s : null;\r\n}\r\n\r\nfunction pickCadenceState(v) {\r\n  if (v == null || v === \"\") return null;\r\n  const s = String(v).trim();\r\n  return s === \"active\" || s === \"paused\" || s === \"closed\" ? s : null;\r\n}\r\n\r\nfunction pickInt(v, fallback) {\r\n  const n = Number(v);\r\n  return Number.isFinite(n) ? Math.floor(n) : fallback;\r\n}\r\n\r\nfunction pickLastTouchAt(v) {\r\n  if (v == null || v === \"\") return null;\r\n  const n = Number(v);\r\n  if (Number.isFinite(n) && n > 0) return n;\r\n  const t = Date.parse(String(v));\r\n  return Number.isFinite(t) ? t : null;\r\n}\n/**\r\n * Follow-up cadence policy — keep in sync with pasted copies in n8n Code nodes.\r\n * Reuses istYmd()/addCalendarDays() already declared above from the pasted normalize-invoice.js block (n8n Code nodes cannot require() local files).\r\n */\r\nconst BUCKET_DAYS = { W1: 7, W2: 14, W3: 21, W4: 28 };\r\n\r\nfunction parseYmd(s) {\r\n  if (!s || typeof s !== \"string\") return null;\r\n  const t = s.trim().slice(0, 10);\r\n  return /^\\d{4}-\\d{2}-\\d{2}$/.test(t) ? t : null;\r\n}\r\n\r\nfunction diffDays(laterYmd, earlierYmd) {\r\n  const a = laterYmd.split(\"-\").map(Number);\r\n  const b = earlierYmd.split(\"-\").map(Number);\r\n  return Math.round((Date.UTC(a[0], a[1] - 1, a[2]) - Date.UTC(b[0], b[1] - 1, b[2])) / 86400000);\r\n}\r\n\r\nfunction bucketLabelForDays(days) {\r\n  if (days <= 7) return \"W1\";\r\n  if (days <= 14) return \"W2\";\r\n  if (days <= 21) return \"W3\";\r\n  return \"W4\";\r\n}\r\n\r\n/**\r\n * @param {object} opts\r\n * @returns {{ nextActionAt: string|null, followupBucket: string|null, cadenceState: string, reason: string, promiseDate?: string|null }}\r\n */\r\nfunction computeNextAction(opts) {\r\n  const today = istYmd(new Date());\r\n  const tomorrow = addCalendarDays(today, 1);\r\n\r\n  const classification = opts.classification || \"no_response\";\r\n  const promiseDate = parseYmd(opts.promiseDate);\r\n  const promiseConfidence = Number(opts.promiseConfidence ?? 0);\r\n  const daysOverdue = Number(opts.daysOverdue ?? 0);\r\n  const amountRemaining = Number(opts.amountRemaining ?? 0);\r\n  const followupCount = Number(opts.followupCount ?? 0);\r\n  const waOptOut = !!opts.waOptOut;\r\n  const email = String(opts.email || \"\").trim();\r\n\r\n  const maxTouches = Number(opts.maxTouches ?? 4);\r\n  const highValue = Number(opts.highValue ?? 100000);\r\n\r\n  if (amountRemaining <= 0) {\r\n    return {\r\n      nextActionAt: null,\r\n      followupBucket: null,\r\n      cadenceState: \"closed\",\r\n      reason: \"amount_remaining_zero\",\r\n      promiseDate: promiseDate || null,\r\n    };\r\n  }\r\n\r\n  if (waOptOut && !email) {\r\n    return {\r\n      nextActionAt: null,\r\n      followupBucket: null,\r\n      cadenceState: \"paused\",\r\n      reason: \"no_reachable_channel\",\r\n      promiseDate: promiseDate || null,\r\n    };\r\n  }\r\n\r\n  if (classification === \"dispute\") {\r\n    return {\r\n      nextActionAt: addCalendarDays(today, 28),\r\n      followupBucket: \"W4\",\r\n      cadenceState: \"paused\",\r\n      reason: \"dispute_paused_internal_resurface_28d\",\r\n      promiseDate: promiseDate || null,\r\n    };\r\n  }\r\n\r\n  let nextActionAt = null;\r\n  let followupBucket = null;\r\n  let cadenceState = \"active\";\r\n  let reason = classification;\r\n  const outPromiseDate = promiseDate && promiseConfidence >= 0.6 ? promiseDate : null;\r\n\r\n  if (classification === \"promise\" && promiseDate && promiseConfidence >= 0.6) {\r\n    nextActionAt = addCalendarDays(promiseDate, 2);\r\n    followupBucket = bucketLabelForDays(diffDays(nextActionAt, today));\r\n    reason = \"promise_with_date\";\r\n  } else if (classification === \"promise\") {\r\n    nextActionAt = addCalendarDays(today, BUCKET_DAYS.W1);\r\n    followupBucket = \"W1\";\r\n    reason = \"promise_no_date_w1\";\r\n  } else if (classification === \"paid\") {\r\n    nextActionAt = addCalendarDays(today, BUCKET_DAYS.W1);\r\n    followupBucket = \"W1\";\r\n    reason = \"paid_verify_w1\";\r\n  } else {\r\n    const ladder = [\"W1\", \"W2\", \"W3\", \"W4\"];\r\n    const idx = Math.min(Math.max(0, followupCount), ladder.length - 1);\r\n    followupBucket = ladder[idx];\r\n    if (followupCount >= maxTouches) {\r\n      return {\r\n        nextActionAt: null,\r\n        followupBucket,\r\n        cadenceState: \"closed\",\r\n        reason: \"max_touches_closed\",\r\n        promiseDate: outPromiseDate,\r\n      };\r\n    }\r\n    nextActionAt = addCalendarDays(today, BUCKET_DAYS[followupBucket]);\r\n    reason = \"no_response_ladder_\" + followupBucket;\r\n  }\r\n\r\n  if (daysOverdue >= 60 || amountRemaining >= highValue) {\r\n    const shifted = addCalendarDays(nextActionAt, -7);\r\n    nextActionAt = shifted < tomorrow ? tomorrow : shifted;\r\n    if (reason.startsWith(\"no_response_ladder\")) {\r\n      followupBucket = bucketLabelForDays(diffDays(nextActionAt, today));\r\n    }\r\n    reason += \"|high_value_or_overdue_tightened\";\r\n  }\r\n\r\n  if (followupCount >= maxTouches) {\r\n    cadenceState = \"closed\";\r\n    reason = \"max_touches_closed\";\r\n  }\r\n\r\n  return {\r\n    nextActionAt,\r\n    followupBucket,\r\n    cadenceState,\r\n    reason,\r\n    promiseDate: outPromiseDate,\r\n  };\r\n}\r\n\r\n/** First (non-retry) send stamps W1 +7d. */\r\nfunction initCadenceAtSend() {\r\n  const today = istYmd(new Date());\r\n  return {\r\n    cadenceState: \"active\",\r\n    followupBucket: \"W1\",\r\n    nextActionAt: addCalendarDays(today, 7),\r\n    followupCount: 0,\r\n    promiseDate: null,\r\n    lastTouchAt: null,\r\n  };\r\n}\nconst inv = $('Read invoice for cadence').item.json;\nfunction truthy(v) {\n  if (typeof v === \"boolean\") return v;\n  if (typeof v === \"number\") return v !== 0;\n  if (typeof v === \"string\") {\n    const s = v.trim().toUpperCase();\n    return s === \"TRUE\" || s === \"1\" || s === \"YES\";\n  }\n  return false;\n}\nfunction pickInt(v, fb) {\n  const n = Number(v);\n  return Number.isFinite(n) ? Math.floor(n) : fb;\n}\nconst overdue = deriveOverdue(inv);\nconst classification = $json.classification || \"no_response\";\nconst promiseDate = $json.promiseDate || null;\nconst promiseConfidence = $json.promiseConfidence != null ? Number($json.promiseConfidence) : 0;\nconst action = computeNextAction({\n  classification,\n  promiseDate,\n  promiseConfidence,\n  daysOverdue: overdue.daysOverdue,\n  amountRemaining: Number(inv.amountRemaining || 0),\n  followupCount: pickInt(inv.followupCount, 0),\n  waOptOut: truthy(inv.waOptOut),\n  email: String(inv.email || \"\"),\n  maxTouches: Number($env.FOLLOWUP_MAX_TOUCHES || 4),\n  highValue: Number($env.FOLLOWUP_HIGH_VALUE || 100000),\n});\nreturn {\n  json: {\n    classification,\n    promiseDate: action.promiseDate || promiseDate || null,\n    promiseConfidence,\n    nextActionAt: action.nextActionAt,\n    followupBucket: action.followupBucket,\n    cadenceState: action.cadenceState,\n    cadenceReason: action.reason,\n  },\n};"
+      }
     }
   ],
   "connections": {
@@ -572,7 +633,7 @@
       "main": [
         [
           {
-            "node": "Reply empty?",
+            "node": "Read invoice for cadence",
             "type": "main",
             "index": 0
           }
@@ -612,7 +673,7 @@
       "main": [
         [
           {
-            "node": "Should notify Teams?",
+            "node": "Compute next action",
             "type": "main",
             "index": 0
           }
@@ -623,7 +684,7 @@
       "main": [
         [
           {
-            "node": "Should notify Teams?",
+            "node": "Compute next action",
             "type": "main",
             "index": 0
           }
@@ -748,6 +809,28 @@
         [
           {
             "node": "Write notified",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read invoice for cadence": {
+      "main": [
+        [
+          {
+            "node": "Reply empty?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute next action": {
+      "main": [
+        [
+          {
+            "node": "Should notify Teams?",
             "type": "main",
             "index": 0
           }

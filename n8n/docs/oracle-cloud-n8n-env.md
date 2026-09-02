@@ -16,6 +16,12 @@
 | `TEAMS_INCOMING_WEBHOOK_URL` | Back-compat alias for escalations |
 | `DASHBOARD_NOTIFY_URL` | n8n `dunnly-read` → Next.js `POST /api/invoices/notify` after sheet sync (SSE push) |
 | `DASHBOARD_NOTIFY_SECRET` | Optional; defaults to `N8N_WEBHOOK_SECRET` |
+| `TWILIO_ACCOUNT_SID` | Required for WhatsApp send URL (`…/Accounts/{SID}/Messages.json`). If unset, dashboard may pass SID in the webhook body. |
+| `TWILIO_CONTENT_SID` | Optional; only used when Config `twilioContentMode` is `content` |
+| `FOLLOWUP_ENABLED` | `true` to arm `dunnly-followup` daily scheduler (default off until tested) |
+| `FOLLOWUP_BATCH_CAP` | Max rows per follow-up run (default 25) |
+| `FOLLOWUP_MAX_TOUCHES` | Close cadence after this many touches (default 4) |
+| `FOLLOWUP_HIGH_VALUE` | Amount threshold for tighter ladder (default 100000) |
 
 **Do not set Graph vars.** The new Microsoft tenant has no Entra app. Live email is `PA_EMAIL_WEBHOOK_URL` only. Delete leftover `MS_TENANT_ID` / `MS_CLIENT_ID` / `MS_CLIENT_SECRET` / `MS_SENDER_UPN` from `/etc/n8n/ms.env` if still present.
 

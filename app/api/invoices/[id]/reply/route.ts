@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { classify, findInvoice, patch, sleep } from "@/lib/store";
 import { N8nUnreachableError, classifyReplyRemote, isMock } from "@/lib/n8n";
+import { computeNextAction } from "@/lib/followup-policy";
 
 export const maxDuration = 90;
 
@@ -33,73 +34,35 @@ export async function POST(
     const cls = classify(text);
     const nextStage =
       cls === "dispute" || cls === "promise" || cls === "paid" ? "notified" : "classified";
-    const updated = patch(id, { classification: cls, stage: nextStage });
+    const inv = findInvoice(id)!;
+    // Mock classifier has no LLM date extraction — promiseDate stays null,
+    // which lands "promise" replies on the no-date W1 branch. Matches the
+    // real dunnly-classify path's behavior when promiseConfidence < 0.6.
+    const action = computeNextAction({
+      classification: cls,
+      promiseDate: null,
+      promiseConfidence: 0,
+      daysOverdue: inv.daysOverdue,
+      amountRemaining: inv.amountRemaining,
+      followupCount: inv.followupCount ?? 0,
+      waOptOut: inv.waOptOut,
+      email: inv.email,
+    });
+    const updated = patch(id, {
+      classification: cls,
+      stage: nextStage,
+      nextActionAt: action.nextActionAt,
+      followupBucket: action.followupBucket,
+      cadenceState: action.cadenceState,
+      promiseDate: action.promiseDate,
+    });
     return NextResponse.json({ invoice: updated });
   }
 
   try {
-    // #region agent log
-    fetch("http://127.0.0.1:7369/ingest/1710511b-54ab-49e5-9ad2-a85aa0c54305", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "725e23" },
-      body: JSON.stringify({
-        sessionId: "725e23",
-        runId: "pre-fix",
-        hypothesisId: "A",
-        location: "app/api/invoices/[id]/reply/route.ts:POST",
-        message: "manual reply classify start",
-        data: { id, textLen: text.length, textPreview: text.slice(0, 80) },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     const result = await classifyReplyRemote(id, text);
-    // #region agent log
-    fetch("http://127.0.0.1:7369/ingest/1710511b-54ab-49e5-9ad2-a85aa0c54305", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "725e23" },
-      body: JSON.stringify({
-        sessionId: "725e23",
-        runId: "pre-fix",
-        hypothesisId: "A",
-        location: "app/api/invoices/[id]/reply/route.ts:ok",
-        message: "manual reply classify result",
-        data: {
-          id,
-          ok: result.ok,
-          invoiceId: result.invoice?.id,
-          stage: result.invoice?.stage,
-          classification: result.invoice?.classification,
-          replyPreview: result.invoice?.replyText
-            ? String(result.invoice.replyText).slice(0, 80)
-            : null,
-          failureReason: result.failureReason || result.invoice?.failureReason || null,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     return NextResponse.json({ invoice: result.invoice });
   } catch (err) {
-    // #region agent log
-    fetch("http://127.0.0.1:7369/ingest/1710511b-54ab-49e5-9ad2-a85aa0c54305", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "725e23" },
-      body: JSON.stringify({
-        sessionId: "725e23",
-        runId: "pre-fix",
-        hypothesisId: "D",
-        location: "app/api/invoices/[id]/reply/route.ts:catch",
-        message: "manual reply classify error",
-        data: {
-          id,
-          isUnreachable: err instanceof N8nUnreachableError,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     if (err instanceof N8nUnreachableError) {
       return NextResponse.json({ error: "backend unreachable" }, { status: 502 });
     }
