@@ -19,3 +19,33 @@ pa-invoke-urls.env
 .twilio-last-smoke.txt
 n8n/workflows/dunnly-send.live.json
 .env.malformed.bak
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# Agent / IDE local state
+.claude/
+.vscode/
+
+# One-off deploy markers
+.cutover-ready
+
+# Bun (npm is canonical — package-lock.json)
+bun.lock
+
+# Session debug scripts (keep locally, never commit)
+scripts/_debug-*.js
+scripts/_check-*.js
+scripts/_verify-*.js
+scripts/debug-*.js
+scripts/inspect-classify-execution.js
+scripts/enable-claude-import.py
+
+# Internal / demo docs (not part of shipped product)
+DEMO-RUNBOOK.md
+DEMO-VOICEOVER.md
+TODOS.md
+n8n/docs/browser-agent-oracle-vm-followup-setup.md
+
+# Eval generated output (fixtures + .gitkeep stay)
+evals/**/results/*.json
