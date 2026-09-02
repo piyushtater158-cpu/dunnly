@@ -24,6 +24,7 @@ const {
   CLASSIFY_MODEL,
   JUDGE_MODEL,
 } = require("../evals/classify-reply/prompts.js");
+const { addCalendarDays, istYmd } = require("../n8n/normalize-invoice.js");
 
 const ALLOWED = new Set(["paid", "promise", "dispute", "no_response"]);
 const PASS_MEAN = 75;
@@ -137,6 +138,38 @@ async function openRouterChat(model, messages, responseFormat) {
   }
 }
 
+function nextFridayYmd(fromYmd) {
+  const [y, m, d] = fromYmd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const day = dt.getUTCDay();
+  let add = (5 - day + 7) % 7;
+  if (add === 0) add = 7;
+  return addCalendarDays(fromYmd, add);
+}
+
+function resolveExpectedPromiseDate(fx) {
+  const today = istYmd(new Date());
+  if (fx.expectedPromiseNull) return null;
+  if (fx.expectedPromiseOffset != null) return addCalendarDays(today, fx.expectedPromiseOffset);
+  if (fx.expectedPromiseFriday) return nextFridayYmd(today);
+  return fx.expectedPromiseDate ?? null;
+}
+
+function promiseDateScore(expected, got, classification) {
+  if (classification !== "promise") {
+    return expected == null ? 100 : 50;
+  }
+  if (expected == null && got == null) return 100;
+  if (expected == null || got == null) return 0;
+  if (expected === got) return 100;
+  const diff = Math.abs(
+    (Date.parse(expected + "T12:00:00Z") - Date.parse(got + "T12:00:00Z")) / 86400000
+  );
+  if (diff <= 1) return 80;
+  if (diff <= 3) return 60;
+  return 0;
+}
+
 function parseJsonContent(content) {
   const raw = String(content || "").trim();
   try {
@@ -192,11 +225,12 @@ Given the verbatim customer reply and a model classification label, score:
 Reply JSON only: {"grounded":n,"noReplyRewrite":n,"schemaOk":n,"notes":"short"}`;
 
 async function classifyOffline(replyText) {
+  const today = istYmd(new Date());
   const res = await openRouterChat(
     CLASSIFY_MODEL,
     [
       { role: "system", content: CLASSIFY_SYSTEM_PROMPT },
-      { role: "user", content: replyText },
+      { role: "user", content: "Today's date (IST): " + today + "\n\nReply:\n" + replyText },
     ],
     { type: "json_object" }
   );
@@ -204,12 +238,15 @@ async function classifyOffline(replyText) {
   const parsed = parseJsonContent(content);
   const rawKeys = Object.keys(parsed);
   const cls = ALLOWED.has(parsed.classification) ? parsed.classification : "no_response";
+  let promiseDate = parsed.promiseDate || null;
+  if (promiseDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(promiseDate))) promiseDate = null;
   // Hallucination signal: any extra key that looks like reply body
   const inventsReplyField = rawKeys.some((k) =>
     /reply|message|body|text|customer/i.test(k) && k !== "classification"
   );
   return {
     classification: cls,
+    promiseDate,
     raw: parsed,
     inventsReplyField,
     via: res.via,
@@ -272,24 +309,26 @@ async function classifyLive(invoiceId, replyText) {
   };
 }
 
-function scoreCase(fid, expected, got, judge) {
+function scoreCase(fid, expected, got, judge, expectedPromiseDate) {
   const expectedMatch = expected === got.classification ? 1 : 0;
   const fidelityScore = fid.pass ? 100 : 0;
   const groundedScore = ((judge.grounded || 1) / 5) * 100;
   const noRewriteScore = ((judge.noReplyRewrite || 1) / 5) * 100;
   const schemaScore = ((judge.schemaOk || 1) / 5) * 100;
-  // Fidelity is non-negotiable weight for on-screen projection
+  const promiseScore = promiseDateScore(expectedPromiseDate, got.promiseDate, got.classification);
   const weighted =
-    fidelityScore * 0.4 +
-    groundedScore * 0.3 +
-    noRewriteScore * 0.2 +
-    schemaScore * 0.1;
+    fidelityScore * 0.3 +
+    groundedScore * 0.25 +
+    noRewriteScore * 0.15 +
+    schemaScore * 0.1 +
+    promiseScore * 0.2;
   return {
     expectedMatch,
     fidelityScore,
     groundedScore,
     noRewriteScore,
     schemaScore,
+    promiseScore,
     weighted: Math.round(weighted * 10) / 10,
   };
 }
@@ -320,7 +359,8 @@ function scoreCase(fid, expected, got, judge) {
     }
 
     const judge = await judgeCase(fx.replyText, got.classification, got.inventsReplyField);
-    const scores = scoreCase(fid, fx.expected, got, judge);
+    const expectedPromiseDate = resolveExpectedPromiseDate(fx);
+    const scores = scoreCase(fid, fx.expected, got, judge, expectedPromiseDate);
 
     let liveResult = null;
     if (live && fx.replyText) {
@@ -341,6 +381,8 @@ function scoreCase(fid, expected, got, judge) {
       id: fx.id,
       expected: fx.expected,
       got: got.classification,
+      expectedPromiseDate,
+      gotPromiseDate: got.promiseDate,
       fidelityPass: fid.pass,
       inventsReplyField: got.inventsReplyField,
       scores,
@@ -357,6 +399,8 @@ function scoreCase(fid, expected, got, judge) {
         fx.expected +
         " got=" +
         got.classification +
+        " · promise=" +
+        (got.promiseDate || "null") +
         " · weighted=" +
         scores.weighted +
         (liveResult?.fidelityPass === false ? " · LIVE_FIDELITY_FAIL" : "")

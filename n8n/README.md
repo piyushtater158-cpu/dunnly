@@ -28,6 +28,9 @@ daysOverdue = max(0, todayIST - dueDate)
 ```
 
 No midnight cron — age rolls when the IST calendar day advances on the next read.
+**Follow-up cadence:** `dunnly-followup.json` runs daily at 09:00 IST (when `FOLLOWUP_ENABLED=true`
+on the n8n host). It redrafts due rows (`cadenceState=active`, `nextActionAt<=today`) and
+re-arms them to `stage=drafted` for human approval — it never sends without approval.
 If supply/credit are missing, the stored `daysOverdue` cell is used as fallback.
 
 JSON contract + fixtures: [`schema/invoices.row.schema.json`](schema/invoices.row.schema.json).

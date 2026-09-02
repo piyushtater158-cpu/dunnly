@@ -37,7 +37,7 @@ function buildJsonBodyExpression(withModeRedraft) {
     : sysLiteral;
 
   const userExpr = withModeRedraft
-    ? "`Invoice ${$json.id} for ${$json.customer}. Amount due ${$json.amountDue}, remaining ${$json.amountRemaining}, ${$json.daysOverdue} days overdue. Draft a polite payment-status-check email and a short WhatsApp message.`"
+    ? "`Invoice ${$json.id} for ${$json.customer}. Amount due ${$json.amountDue}, remaining ${$json.amountRemaining}, ${$json.daysOverdue} days overdue. followupCount=${$('Read invoice').item.json.followupCount || 0}. Draft a polite payment-status-check email and a short WhatsApp message.`"
     : "`Invoice ${$json.id} for ${$json.customer}. Amount due ${$json.amountDue}, remaining ${$json.amountRemaining}, ${$json.daysOverdue} days overdue. Draft a polite payment-status-check email and a short WhatsApp message.`";
 
   return (

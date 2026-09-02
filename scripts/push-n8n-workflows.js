@@ -6,8 +6,9 @@ const fs = require("fs");
 const path = require("path");
 const https = require("https");
 
-const envFile = path.join(__dirname, "..", ".env");
-if (fs.existsSync(envFile)) {
+const envFiles = [path.join(__dirname, "..", ".env.local"), path.join(__dirname, "..", ".env")];
+for (const envFile of envFiles) {
+  if (!fs.existsSync(envFile)) continue;
   for (const line of fs.readFileSync(envFile, "utf8").split(/\r?\n/)) {
     const m = line.match(/^([^#=]+)=(.*)$/);
     if (m && !process.env[m[1].trim()]) process.env[m[1].trim()] = m[2].trim().replace(/^["']|["']$/g, "");
@@ -30,6 +31,7 @@ const NAMES = [
   "dunnly-draft",
   "dunnly-classify",
   "dunnly-send",
+  "dunnly-followup",
   "dunnly-inbound-wa",
   "dunnly-inbound-email",
   "dunnly-seed-demo-contacts",

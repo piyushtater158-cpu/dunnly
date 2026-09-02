@@ -122,7 +122,44 @@ function normalizeInvoiceRow(r) {
     waStatus: r.waStatus || null,
     waOptIn: truthy(r.waOptIn),
     waOptOut: truthy(r.waOptOut),
+    nextActionAt: pickYmd(r.nextActionAt),
+    followupBucket: pickBucket(r.followupBucket),
+    followupCount: pickInt(r.followupCount, 0),
+    cadenceState: pickCadenceState(r.cadenceState),
+    promiseDate: pickYmd(r.promiseDate),
+    lastTouchAt: pickLastTouchAt(r.lastTouchAt),
   };
+}
+
+function pickYmd(v) {
+  if (v == null || v === "") return null;
+  const s = String(v).trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+
+function pickBucket(v) {
+  if (v == null || v === "") return null;
+  const s = String(v).trim();
+  return s === "W1" || s === "W2" || s === "W3" || s === "W4" ? s : null;
+}
+
+function pickCadenceState(v) {
+  if (v == null || v === "") return null;
+  const s = String(v).trim();
+  return s === "active" || s === "paused" || s === "closed" ? s : null;
+}
+
+function pickInt(v, fallback) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.floor(n) : fallback;
+}
+
+function pickLastTouchAt(v) {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  if (Number.isFinite(n) && n > 0) return n;
+  const t = Date.parse(String(v));
+  return Number.isFinite(t) ? t : null;
 }
 
 module.exports = {

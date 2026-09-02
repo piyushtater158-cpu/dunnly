@@ -1,7 +1,7 @@
 /**
  * Seed Google Sheet contact columns for the Twilio / Gmail demo.
  *
- * - Pins INV-1 (Piyush Tater) to ADMIN_PHONE + waOptIn + demo email
+ * - Pins INV-24245 (Piyush Tater Demo Co) to ADMIN_PHONE + waOptIn + demo email
  * - Forces Date of supply + Credit line so the row is overdue (WA gate)
  * - Resets send markers so Approve & Send performs a fresh Gmail+WA attempt
  * - Cycles demo Gmails across other invoices; keeps 555 test phones
@@ -23,8 +23,8 @@ const DEMO_EMAILS = [
   "piyushjain2090@gmail.com",
   "kdfoods101@gmail.com",
 ];
-const WA_DEMO_INVOICE_ID = "INV-1";
-const WA_DEMO_CUSTOMER = "Piyush Tater";
+const WA_DEMO_INVOICE_ID = "INV-24245";
+const WA_DEMO_CUSTOMER = "Piyush Tater Demo Co";
 const WA_DEMO_EMAIL = "piyushtater5555@gmail.com";
 const SEED_WEBHOOK_PATH = "dunnly/seed-demo";
 
@@ -422,7 +422,7 @@ const wf = {
   }
 
   console.log(
-    "Done. Confirm INV-1 is overdue with ADMIN_PHONE + " + WA_DEMO_EMAIL
+    "Done. Confirm " + WA_DEMO_INVOICE_ID + " is overdue with ADMIN_PHONE + " + WA_DEMO_EMAIL
   );
   console.log("Sheet: https://docs.google.com/spreadsheets/d/" + DOC_ID + "/edit");
 })().catch((e) => {

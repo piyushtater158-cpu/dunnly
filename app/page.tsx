@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Classification, InboundEvent, Invoice, Stage } from "@/lib/store";
+import { addCalendarDays, istYmd } from "@/lib/overdue";
 
 const WA_DEMO_INVOICE_ID = "INV-24245";
 
@@ -18,16 +19,52 @@ const CLS: Record<
   none: { label: "—", bg: "transparent", fg: "#a5a199", border: "transparent" },
 };
 
-type TabKey = "action" | "flight" | "done" | "failed" | "inbound" | "all";
+type TabKey = "action" | "flight" | "done" | "failed" | "inbound" | "followups" | "all";
 
 const needsReview = (v: Invoice) => v.stage === "drafted" || v.stage === "queued";
 const isFailed = (v: Invoice) => v.stage === "failed";
 const inFlight = (v: Invoice) => v.stage === "sent" || v.stage === "replied";
 const isDone = (v: Invoice) => v.stage === "classified" || v.stage === "notified";
 
+function ymdLe(a: string, b: string): boolean {
+  return a <= b;
+}
+
+function formatTouchYmd(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.toLocaleDateString("en-GB", { day: "numeric", month: "short" }).toUpperCase();
+}
+
+function isFollowupRow(v: Invoice): boolean {
+  const today = istYmd();
+  if (v.cadenceState === "active" && v.nextActionAt) return true;
+  if (v.cadenceState === "paused" && v.nextActionAt && ymdLe(v.nextActionAt, today)) return true;
+  return false;
+}
+
+function followupChip(v: Invoice): string | null {
+  if (!v.cadenceState || v.cadenceState === "closed") return null;
+  if (v.cadenceState === "paused") return null;
+  const touch = v.followupCount ?? 0;
+  if (v.nextActionAt) return "TOUCH " + touch + " · NEXT " + formatTouchYmd(v.nextActionAt);
+  return "TOUCH " + touch;
+}
+
+function cadenceStatusLine(v: Invoice): string {
+  if (v.cadenceState === "paused") return "CADENCE PAUSED · REVIEW";
+  if (v.cadenceState === "closed") return "CADENCE CLOSED";
+  if (v.cadenceState === "active" && v.nextActionAt) {
+    return "CADENCE ACTIVE · NEXT " + formatTouchYmd(v.nextActionAt);
+  }
+  if (v.cadenceState === "active") return "CADENCE ACTIVE";
+  return "CADENCE —";
+}
+
 const TAB_DEFS: { key: TabKey; label: string; test: (v: Invoice) => boolean }[] = [
   { key: "action", label: "NEEDS REVIEW", test: needsReview },
   { key: "flight", label: "IN FLIGHT", test: inFlight },
+  { key: "followups", label: "FOLLOW-UPS", test: isFollowupRow },
   { key: "done", label: "CLASSIFIED", test: isDone },
   { key: "failed", label: "FAILED", test: isFailed },
   { key: "inbound", label: "INBOUND", test: () => false },
@@ -285,21 +322,7 @@ export default function PipelineDashboard() {
       });
       applyInvoice(data.invoice);
       setOutage(false);
-    } catch (err) {
-      // #region agent log
-      fetch("http://127.0.0.1:7369/ingest/1710511b-54ab-49e5-9ad2-a85aa0c54305", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3a635b" },
-        body: JSON.stringify({
-          sessionId: "3a635b",
-          hypothesisId: "A",
-          location: "app/page.tsx:send:catch",
-          message: "UI send failed → outage banner",
-          data: { id, err: err instanceof Error ? err.message : String(err) },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
+    } catch {
       setOutage(true);
     } finally {
       flag(id + ":send", false);
@@ -348,69 +371,41 @@ export default function PipelineDashboard() {
     }).catch(() => setOutage(true));
   }
 
+  async function patchCadence(
+    id: string,
+    body: { cadenceState?: string; nextActionAt?: string | null; followupBucket?: string | null }
+  ) {
+    const key = id + ":cadence";
+    if (inflight[key]) return;
+    flag(key, true);
+    try {
+      const data = await fetchJson<{ invoice: Invoice }>(`/api/invoices/${id}/cadence`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      applyInvoice(data.invoice);
+      setOutage(false);
+    } catch {
+      setOutage(true);
+    } finally {
+      flag(key, false);
+    }
+  }
+
   async function submitReply(id: string) {
     if (inflight[id + ":reply"]) return;
     const text = replies[id] ?? "";
     flag(id + ":reply", true);
     try {
-      // #region agent log
-      fetch("http://127.0.0.1:7369/ingest/1710511b-54ab-49e5-9ad2-a85aa0c54305", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "725e23" },
-        body: JSON.stringify({
-          sessionId: "725e23",
-          runId: "pre-fix",
-          hypothesisId: "E",
-          location: "app/page.tsx:submitReply",
-          message: "UI submitReply clicked",
-          data: { id, textLen: text.length },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       const data = await fetchJson<{ invoice: Invoice }>(`/api/invoices/${id}/reply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
       });
-      // #region agent log
-      fetch("http://127.0.0.1:7369/ingest/1710511b-54ab-49e5-9ad2-a85aa0c54305", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "725e23" },
-        body: JSON.stringify({
-          sessionId: "725e23",
-          runId: "pre-fix",
-          hypothesisId: "A",
-          location: "app/page.tsx:submitReply:ok",
-          message: "UI submitReply got invoice",
-          data: {
-            id,
-            invoiceId: data.invoice?.id,
-            stage: data.invoice?.stage,
-            classification: data.invoice?.classification,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       applyInvoice(data.invoice);
       setOutage(false);
-    } catch (err) {
-      // #region agent log
-      fetch("http://127.0.0.1:7369/ingest/1710511b-54ab-49e5-9ad2-a85aa0c54305", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "725e23" },
-        body: JSON.stringify({
-          sessionId: "725e23",
-          runId: "pre-fix",
-          hypothesisId: "D",
-          location: "app/page.tsx:submitReply:catch",
-          message: "UI submitReply failed",
-          data: { id, err: err instanceof Error ? err.message : String(err) },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
+    } catch {
       setOutage(true);
     } finally {
       flag(id + ":reply", false);
@@ -423,17 +418,27 @@ export default function PipelineDashboard() {
   const rows = useMemo(() => {
     if (!invoices) return [];
     if (tab === "inbound") return [];
-    const risk = (v: Invoice) =>
-      (v.classification === "dispute" ? 400 : 0) +
-      (isFailed(v) ? 300 : 0) +
-      (v.classification === "promise" ? 120 : 0) +
-      (needsReview(v) ? 60 : 0) +
-      (v.id === WA_DEMO_INVOICE_ID ? 50 : 0) +
-      v.daysOverdue / 100;
-    return invoices
-      .filter((v) => active.test(v) || v.id === open)
-      .slice()
-      .sort((a, b) => risk(b) - risk(a));
+    const risk = (v: Invoice) => {
+      const today = istYmd();
+      const cadenceDue =
+        v.cadenceState === "active" && v.nextActionAt && ymdLe(v.nextActionAt, today) ? 200 : 0;
+      return (
+        cadenceDue +
+        (v.classification === "dispute" ? 400 : 0) +
+        (isFailed(v) ? 300 : 0) +
+        (v.classification === "promise" ? 120 : 0) +
+        (needsReview(v) ? 60 : 0) +
+        (v.id === WA_DEMO_INVOICE_ID ? 50 : 0) +
+        v.daysOverdue / 100
+      );
+    };
+    const filtered = invoices.filter((v) => active.test(v) || v.id === open);
+    if (tab === "followups") {
+      return filtered
+        .slice()
+        .sort((a, b) => (a.nextActionAt || "").localeCompare(b.nextActionAt || ""));
+    }
+    return filtered.slice().sort((a, b) => risk(b) - risk(a));
   }, [invoices, active, open, tab]);
 
   if (!invoices) {
@@ -779,7 +784,21 @@ export default function PipelineDashboard() {
                   <div style={{ fontSize: 10.5, color: "#55524a", fontWeight: 400, overflow: "hidden", textOverflow: "ellipsis" }}>
                     {v.email}
                     {v.waOptOut ? " · WA OPTED OUT" : v.waStatus ? " · WA " + v.waStatus.toUpperCase() : ""}
+                    {followupChip(v) ? " · " + followupChip(v) : ""}
                   </div>
+                )}
+                {v.cadenceState === "paused" && (
+                  <span
+                    style={{
+                      marginLeft: 8,
+                      fontSize: 10,
+                      letterSpacing: "0.08em",
+                      fontWeight: 700,
+                      color: "#b8390e",
+                    }}
+                  >
+                    CADENCE PAUSED · REVIEW
+                  </span>
                 )}
               </div>
               <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{money(v.amountDue)}</div>
@@ -813,7 +832,7 @@ export default function PipelineDashboard() {
                   ))}
                 </div>
                 <div style={{ fontSize: 10.5, letterSpacing: "0.08em", fontWeight: 700, color: isFailed(v) ? "#b8390e" : "#33312c" }}>
-                  {isFailed(v) ? "FAILED" : v.stage.toUpperCase()}
+                  {isFailed(v) ? "FAILED" : v.stage === "drafted" && (v.followupCount ?? 0) > 0 ? "STILL PENDING APPROVAL" : v.stage.toUpperCase()}
                 </div>
               </div>
               <div>
@@ -871,6 +890,89 @@ export default function PipelineDashboard() {
                     >
                       {retrying ? "RETRYING…" : "RETRY STEP"}
                     </button>
+                  </div>
+                )}
+
+                {(v.cadenceState === "active" || v.cadenceState === "paused") && (
+                  <div
+                    style={{
+                      border: "1px solid #111110",
+                      background: "#f2f1ec",
+                      padding: "12px 14px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 16,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      <div style={{ fontSize: 10.5, letterSpacing: "0.12em", fontWeight: 700 }}>
+                        FOLLOW-UP CADENCE
+                      </div>
+                      <div style={{ fontSize: 12.5 }}>{cadenceStatusLine(v)}</div>
+                      {v.promiseDate && (
+                        <div style={{ fontSize: 11, color: "#55524a" }}>
+                          PROMISE DATE · {formatTouchYmd(v.promiseDate)}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {v.cadenceState === "active" && (
+                        <button
+                          onClick={() =>
+                            patchCadence(v.id, { nextActionAt: addCalendarDays(istYmd(), 7) })
+                          }
+                          disabled={!!inflight[v.id + ":cadence"]}
+                          style={{
+                            border: "1px solid #111110",
+                            background: "transparent",
+                            color: "#111110",
+                            padding: "7px 12px",
+                            fontSize: 11,
+                            letterSpacing: "0.08em",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                          }}
+                        >
+                          SNOOZE +7D
+                        </button>
+                      )}
+                      {v.cadenceState === "paused" && (
+                        <button
+                          onClick={() => patchCadence(v.id, { cadenceState: "active" })}
+                          disabled={!!inflight[v.id + ":cadence"]}
+                          style={{
+                            border: "1px solid #111110",
+                            background: "#111110",
+                            color: "#f2f1ec",
+                            padding: "7px 12px",
+                            fontSize: 11,
+                            letterSpacing: "0.08em",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                          }}
+                        >
+                          RESUME
+                        </button>
+                      )}
+                      <button
+                        onClick={() => patchCadence(v.id, { cadenceState: "closed" })}
+                        disabled={!!inflight[v.id + ":cadence"]}
+                        style={{
+                          border: "1px solid #b8390e",
+                          background: "transparent",
+                          color: "#b8390e",
+                          padding: "7px 12px",
+                          fontSize: 11,
+                          letterSpacing: "0.08em",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        CLOSE CADENCE
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -1074,9 +1176,7 @@ export default function PipelineDashboard() {
                       <div style={{ borderTop: "1px dashed #d5d2c8", paddingTop: 9, display: "flex", flexDirection: "column", gap: 8 }}>
                         <div style={{ fontSize: 12, lineHeight: 1.55, color: "#33312c" }}>
                           &ldquo;
-                          {v.replyText === ""
-                            ? "no reply received within 7 days — auto-closed by n8n"
-                            : v.replyText}
+                          {v.replyText === "" ? cadenceStatusLine(v) : v.replyText}
                           &rdquo;
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 10.5, letterSpacing: "0.08em" }}>
