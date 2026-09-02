@@ -10,6 +10,8 @@
     "eval:wa-draft": "node scripts/eval-wa-draft.js",
     "eval:classify-reply": "node scripts/eval-classify-reply.js",
     "sync:draft-prompts": "node scripts/sync-draft-prompts.js",
+    "test:message-body": "node scripts/test-message-body.js",
+    "sync:message-body": "node scripts/sync-normalize-message-body.js",
     "push:eval-llm": "node scripts/push-eval-llm.js"
   },
   "dependencies": {

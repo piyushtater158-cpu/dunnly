@@ -4,6 +4,8 @@
  * Derives dueDate + daysOverdue from dateOfSupply + creditDays (IST calendar).
  */
 
+const { normalizeMessageBody } = require("./normalize-message-body");
+
 function istYmd(asOf) {
   const d = asOf || new Date();
   return new Intl.DateTimeFormat("en-CA", {
@@ -113,7 +115,14 @@ function normalizeInvoiceRow(r) {
     daysOverdue: overdue.daysOverdue,
     stage: r.stage || "queued",
     classification: r.classification || null,
-    replyText: r.repliedAt ? (r.replyText || "") : null,
+    replyText: r.repliedAt
+      ? normalizeMessageBody(r.replyText || "", {
+          channel:
+            r.replyChannel === "email" || r.replyChannel === "whatsapp"
+              ? r.replyChannel
+              : "manual",
+        })
+      : null,
     replyChannel: r.replyChannel || null,
     failureReason: r.failureReason || null,
     draftEmail: r.draftEmail || null,

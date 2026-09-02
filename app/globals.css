@@ -28,6 +28,13 @@ button {
   font-family: inherit;
 }
 
+.dunnly-prose {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  white-space: pre-wrap;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
 @keyframes dunnly-pulse {
   0%,
   100% {

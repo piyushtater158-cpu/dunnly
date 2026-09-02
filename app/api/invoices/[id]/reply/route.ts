@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { classify, findInvoice, patch, sleep } from "@/lib/store";
 import { N8nUnreachableError, classifyReplyRemote, isMock } from "@/lib/n8n";
 import { computeNextAction } from "@/lib/followup-policy";
+import { normalizeMessageBody } from "@/lib/message-body";
 
 export const maxDuration = 90;
 
@@ -20,7 +21,7 @@ export async function POST(
   let text = "";
   try {
     const body = await req.json();
-    text = typeof body?.text === "string" ? body.text : "";
+    text = typeof body?.text === "string" ? normalizeMessageBody(body.text, { channel: "manual" }) : "";
   } catch {
     // no body — treat as no reply / silence
   }

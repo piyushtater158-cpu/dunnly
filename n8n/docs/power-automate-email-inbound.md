@@ -39,6 +39,12 @@ Environment: **Piyush (default)** — `Default-1b146de3-1539-4561-beed-4422cc62d
 }
 ```
 
+**Important — send plain reply text only**
+
+- Use Gmail’s **plain-text body** action (not HTML/MIME) for `bodyPlain`.
+- Send only the customer’s new reply when possible — not the full thread with headers.
+- n8n runs `normalizeMessageBody()` on ingest (strips HTML, trims quoted reply chains), but cleaner PA output yields better sheet and dashboard text.
+
 Headers: `Content-Type: application/json`  
 Optional: `x-dunnly-inbound-secret` if `DUNNLY_INBOUND_EMAIL_SECRET` is set on n8n host.
 
@@ -67,6 +73,7 @@ File: [`../workflows/dunnly-inbound-email.json`](../workflows/dunnly-inbound-ema
 ## Push workflow
 
 ```bash
+node scripts/sync-normalize-message-body.js
 node scripts/push-n8n-workflows.js
 ```
 

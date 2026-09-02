@@ -6,7 +6,10 @@
       "name": "Email inbound",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "webhookId": "dunnly-email-inbound",
       "parameters": {
         "httpMethod": "POST",
@@ -20,10 +23,13 @@
       "name": "Parse email",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [260, 0],
+      "position": [
+        260,
+        0
+      ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const b = $json.body || $json;\nreturn {\n  json: {\n    messageId: String(b.messageId || b.id || ('EM' + Date.now())),\n    fromEmail: String(b.fromEmail || b.from || ''),\n    subject: String(b.subject || ''),\n    bodyPlain: String(b.bodyPlain || b.body || '').slice(0, 2000),\n    receivedAt: String(b.receivedAt || new Date().toISOString()),\n    now: new Date().toISOString(),\n  },\n};"
+        "jsCode": "/**\r\n * Shared message-body normalizer — keep in sync with lib/message-body.ts.\r\n * Used at inbound ingestion and on read for customer reply text.\r\n */\r\n\r\nconst HTML_ENTITIES = {\r\n  \"&nbsp;\": \" \",\r\n  \"&amp;\": \"&\",\r\n  \"&lt;\": \"<\",\r\n  \"&gt;\": \">\",\r\n  \"&quot;\": '\"',\r\n  \"&#39;\": \"'\",\r\n  \"&apos;\": \"'\",\r\n};\r\n\r\nfunction decodeHtmlEntities(s) {\r\n  return String(s).replace(/&(?:nbsp|amp|lt|gt|quot|apos|#39);/gi, (m) => HTML_ENTITIES[m.toLowerCase()] ?? m);\r\n}\r\n\r\nfunction stripHtml(s) {\r\n  let out = String(s);\r\n  out = out.replace(/<br\\s*\\/?>/gi, \"\\n\");\r\n  out = out.replace(/<\\/p>/gi, \"\\n\\n\");\r\n  out = out.replace(/<[^>]+>/g, \"\");\r\n  return decodeHtmlEntities(out);\r\n}\r\n\r\nfunction collapseWhitespace(s) {\r\n  return String(s)\r\n    .replace(/\\r\\n/g, \"\\n\")\r\n    .replace(/\\r/g, \"\\n\")\r\n    .replace(/\\n{3,}/g, \"\\n\\n\")\r\n    .replace(/[ \\t]+\\n/g, \"\\n\")\r\n    .replace(/\\n[ \\t]+/g, \"\\n\")\r\n    .trim();\r\n}\r\n\r\nfunction stripJsonArtifacts(s) {\r\n  let out = String(s).trim();\r\n  out = out.replace(/^```(?:json)?\\s*/i, \"\").replace(/\\s*```$/i, \"\");\r\n  if (!out.startsWith(\"{\")) return out;\r\n  try {\r\n    const parsed = JSON.parse(out);\r\n    if (parsed && typeof parsed === \"object\" && !Array.isArray(parsed)) {\r\n      if (typeof parsed.classification === \"string\") return \"\";\r\n      for (const key of [\"replyText\", \"text\", \"body\", \"message\", \"emailBody\", \"waBody\", \"content\"]) {\r\n        if (typeof parsed[key] === \"string\" && parsed[key].trim()) return parsed[key].trim();\r\n      }\r\n    }\r\n  } catch {\r\n    /* not JSON */\r\n  }\r\n  return out;\r\n}\r\n\r\nconst EMAIL_QUOTE_PATTERNS = [\r\n  /\\n-{2,}\\s*original message\\s*-{2,}/i,\r\n  /\\n-{5,}\\s*forwarded message\\s*-{5,}/i,\r\n  /\\nfrom:\\s*.+\\n(?:sent|date):\\s*.+/i,\r\n  /\\non\\s.+wrote:\\s*\\n/i,\r\n  /\\n_{5,}\\n/,\r\n];\r\n\r\nfunction trimEmailReply(s) {\r\n  let out = String(s);\r\n  let cutAt = out.length;\r\n  for (const pat of EMAIL_QUOTE_PATTERNS) {\r\n    const m = pat.exec(out);\r\n    if (m && m.index < cutAt) cutAt = m.index;\r\n  }\r\n  out = out.slice(0, cutAt);\r\n  const lines = out.split(\"\\n\");\r\n  const kept = [];\r\n  for (const line of lines) {\r\n    if (/^>/.test(line.trim())) break;\r\n    kept.push(line);\r\n  }\r\n  return collapseWhitespace(kept.join(\"\\n\"));\r\n}\r\n\r\nfunction objectToPlainText(obj) {\r\n  if (obj == null) return \"\";\r\n  if (typeof obj === \"string\") return obj.trim();\r\n  if (typeof obj === \"number\" || typeof obj === \"boolean\") return String(obj);\r\n  if (Array.isArray(obj)) {\r\n    const parts = obj.map(objectToPlainText).filter(Boolean);\r\n    return parts.join(\"\\n\").trim();\r\n  }\r\n  if (typeof obj === \"object\") {\r\n    for (const key of [\"text\", \"body\", \"Body\", \"content\", \"message\", \"replyText\", \"bodyPlain\"]) {\r\n      if (typeof obj[key] === \"string\" && obj[key].trim()) return obj[key].trim();\r\n    }\r\n    const vals = Object.values(obj)\r\n      .map((v) => (typeof v === \"string\" ? v.trim() : \"\"))\r\n      .filter(Boolean);\r\n    if (vals.length === 1) return vals[0];\r\n    if (vals.length > 1) return vals.join(\" \").trim();\r\n  }\r\n  return \"\";\r\n}\r\n\r\nfunction coercePlainText(raw) {\r\n  if (raw == null || raw === \"\") return \"\";\r\n  if (typeof raw === \"string\") return raw.trim();\r\n  const fromObj = objectToPlainText(raw);\r\n  if (fromObj) return fromObj;\r\n  return \"\";\r\n}\r\n\r\n/**\r\n * @param {unknown} raw\r\n * @param {{ channel?: 'email' | 'whatsapp' | 'manual' }} [opts]\r\n * @returns {string}\r\n */\r\nfunction normalizeMessageBody(raw, opts) {\r\n  const channel = opts && opts.channel ? opts.channel : \"manual\";\r\n  let text = coercePlainText(raw);\r\n  if (!text) return \"\";\r\n  text = stripJsonArtifacts(text);\r\n  if (channel === \"email\") {\r\n    text = stripHtml(text);\r\n    text = trimEmailReply(text);\r\n  }\r\n  return collapseWhitespace(text);\r\n}\n\nconst b = $json.body || $json;\nconst raw = b.bodyPlain ?? b.body ?? '';\nconst bodyPlain = normalizeMessageBody(raw, { channel: 'email' }).slice(0, 2000);\nreturn {\n  json: {\n    messageId: String(b.messageId || b.id || ('EM' + Date.now())),\n    fromEmail: String(b.fromEmail || b.from || ''),\n    subject: String(b.subject || ''),\n    bodyPlain,\n    receivedAt: String(b.receivedAt || new Date().toISOString()),\n    now: new Date().toISOString(),\n  },\n};"
       }
     },
     {
@@ -31,7 +37,10 @@
       "name": "Read invoices",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [520, 0],
+      "position": [
+        520,
+        0
+      ],
       "parameters": {
         "resource": "sheet",
         "operation": "read",
@@ -59,7 +68,10 @@
       "name": "Match email",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [780, 0],
+      "position": [
+        780,
+        0
+      ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "const meta = $('Parse email').item.json;\nconst SELF = 'piyushtater158@gmail.com';\nfunction normEmail(raw) {\n  const s = String(raw || '').trim().toLowerCase();\n  const m = s.match(/<([^>]+)>/);\n  return (m ? m[1] : s).trim();\n}\nconst from = normEmail(meta.fromEmail);\nif (!from || from === normEmail(SELF)) {\n  return [{ json: { ...meta, matchCount: 0, attachInvoiceId: '', matchReason: 'ignored_self', logStatus: 'pending' } }];\n}\nconst subjectInv = (meta.subject || '').match(/INV-\\d+/i);\nconst subjectId = subjectInv ? subjectInv[0].toUpperCase() : '';\nconst rows = $input.all().map(({ json: r }) => ({\n  id: String(r.id || ''),\n  email: normEmail(r.email),\n  stage: String(r.stage || '').toLowerCase(),\n  emailSentAt: String(r.emailSentAt || '').trim(),\n}));\nconst openEligible = (r) =>\n  (r.stage === 'sent' || r.stage === 'replied') &&\n  (String(r.emailSentAt || '').trim() !== '' || r.stage === 'sent');\nconst matches = rows.filter((r) => r.email && r.email === from && openEligible(r));\nlet attachInvoiceId = '';\nlet matchReason = 'unmatched';\nlet matchCount = 0;\nlet matchIds = [];\nif (matches.length === 1) {\n  matchCount = 1;\n  matchIds = [matches[0].id];\n  if (subjectId && subjectId !== matches[0].id.toUpperCase()) {\n    matchReason = 'ambiguous_subject_mismatch';\n  } else {\n    attachInvoiceId = matches[0].id;\n    matchReason = 'attached';\n  }\n} else if (matches.length > 1) {\n  matchIds = matches.map((m) => m.id);\n  matchCount = matches.length;\n  if (subjectId) {\n    const subjectMatches = matches.filter((m) => m.id.toUpperCase() === subjectId);\n    if (subjectMatches.length === 1) {\n      attachInvoiceId = subjectMatches[0].id;\n      matchReason = 'attached';\n      matchCount = 1;\n      matchIds = [subjectMatches[0].id];\n    } else {\n      matchReason = 'ambiguous_multiple';\n    }\n  } else {\n    matchReason = 'ambiguous_multiple';\n  }\n}\nreturn [{ json: {\n  ...meta,\n  matchIds,\n  matchCount,\n  attachInvoiceId,\n  matchReason,\n  logStatus: attachInvoiceId ? 'attached' : 'pending',\n  attachedInvoiceId: attachInvoiceId,\n  body: meta.bodyPlain,\n  kind: 'reply',\n  from: meta.fromEmail,\n  sid: meta.messageId,\n} }];"
@@ -70,7 +82,10 @@
       "name": "Unique match?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1040, 0],
+      "position": [
+        1040,
+        0
+      ],
       "parameters": {
         "conditions": {
           "combinator": "and",
@@ -92,7 +107,10 @@
       "name": "Write invoice replied",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [1300, -80],
+      "position": [
+        1300,
+        -80
+      ],
       "parameters": {
         "resource": "sheet",
         "operation": "update",
@@ -108,7 +126,9 @@
         },
         "columns": {
           "mappingMode": "defineBelow",
-          "matchingColumns": ["id"],
+          "matchingColumns": [
+            "id"
+          ],
           "value": {
             "id": "={{ $json.attachInvoiceId }}",
             "stage": "replied",
@@ -132,7 +152,10 @@
       "name": "Log inbound",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [1560, 0],
+      "position": [
+        1560,
+        0
+      ],
       "continueOnFail": true,
       "parameters": {
         "resource": "sheet",
@@ -163,17 +186,116 @@
             "messageId": "={{ $json.messageId }}"
           },
           "schema": [
-            { "id": "timestamp", "displayName": "timestamp", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
-            { "id": "sid", "displayName": "sid", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
-            { "id": "from", "displayName": "from", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
-            { "id": "body", "displayName": "body", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
-            { "id": "kind", "displayName": "kind", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
-            { "id": "suggestedInvoiceId", "displayName": "suggestedInvoiceId", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
-            { "id": "attachedInvoiceId", "displayName": "attachedInvoiceId", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
-            { "id": "status", "displayName": "status", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
-            { "id": "messageStatus", "displayName": "messageStatus", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
-            { "id": "channel", "displayName": "channel", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false },
-            { "id": "messageId", "displayName": "messageId", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true, "removed": false }
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "sid",
+              "displayName": "sid",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "from",
+              "displayName": "from",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "body",
+              "displayName": "body",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "kind",
+              "displayName": "kind",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "suggestedInvoiceId",
+              "displayName": "suggestedInvoiceId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "attachedInvoiceId",
+              "displayName": "attachedInvoiceId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "messageStatus",
+              "displayName": "messageStatus",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "channel",
+              "displayName": "channel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "messageId",
+              "displayName": "messageId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
           ]
         },
         "options": {}
@@ -190,7 +312,10 @@
       "name": "Attached reply?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1820, 0],
+      "position": [
+        1820,
+        0
+      ],
       "parameters": {
         "conditions": {
           "combinator": "and",
@@ -212,7 +337,10 @@
       "name": "Classify reply",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2080, -80],
+      "position": [
+        2080,
+        -80
+      ],
       "continueOnFail": true,
       "parameters": {
         "method": "POST",
@@ -235,7 +363,10 @@
       "name": "Notify Teams pending",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2080, 80],
+      "position": [
+        2080,
+        80
+      ],
       "continueOnFail": true,
       "parameters": {
         "method": "POST",
@@ -250,7 +381,10 @@
       "name": "Respond inbound",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [2340, 0],
+      "position": [
+        2340,
+        0
+      ],
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ JSON.stringify({ ok: true, matchReason: $json.matchReason, attachInvoiceId: $json.attachInvoiceId || '' }) }}",
@@ -260,41 +394,131 @@
   ],
   "connections": {
     "Email inbound": {
-      "main": [[{ "node": "Parse email", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Parse email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Parse email": {
-      "main": [[{ "node": "Read invoices", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Read invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Read invoices": {
-      "main": [[{ "node": "Match email", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Match email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Match email": {
-      "main": [[{ "node": "Unique match?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Unique match?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Unique match?": {
       "main": [
-        [{ "node": "Write invoice replied", "type": "main", "index": 0 }],
-        [{ "node": "Log inbound", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Write invoice replied",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Write invoice replied": {
-      "main": [[{ "node": "Log inbound", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Log inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Log inbound": {
-      "main": [[{ "node": "Attached reply?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Attached reply?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Attached reply?": {
       "main": [
-        [{ "node": "Classify reply", "type": "main", "index": 0 }],
-        [{ "node": "Notify Teams pending", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Classify reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Teams pending",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Classify reply": {
-      "main": [[{ "node": "Respond inbound", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Respond inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Notify Teams pending": {
-      "main": [[{ "node": "Respond inbound", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Respond inbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "settings": { "executionOrder": "v1" }
+  "settings": {
+    "executionOrder": "v1"
+  }
 }

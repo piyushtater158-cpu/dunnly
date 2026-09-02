@@ -9,6 +9,10 @@
 
 import { computeDaysOverdue, pickSupplyCredit } from "@/lib/overdue";
 import {
+  normalizeMessageBody,
+  replyChannelToMessageChannel,
+} from "@/lib/message-body";
+import {
   money,
   type Classification,
   type CadenceState,
@@ -194,7 +198,16 @@ export function toInvoice(raw: unknown): Invoice {
     daysOverdue: derived.daysOverdue,
     stage,
     classification,
-    replyText: typeof r.replyText === "string" ? r.replyText : null,
+    replyText:
+      typeof r.replyText === "string"
+        ? normalizeMessageBody(r.replyText, {
+            channel: replyChannelToMessageChannel(
+              r.replyChannel === "email" || r.replyChannel === "whatsapp" || r.replyChannel === "manual"
+                ? r.replyChannel
+                : null
+            ),
+          })
+        : null,
     replyChannel:
       r.replyChannel === "email" || r.replyChannel === "whatsapp" || r.replyChannel === "manual"
         ? r.replyChannel
@@ -227,11 +240,16 @@ export function toInboundEvent(raw: unknown): InboundEvent {
     : "pending") as InboundEvent["status"];
   const ts =
     typeof r.timestamp === "string" ? Date.parse(r.timestamp) : Number(r.timestamp);
+  const channelRaw = r.channel;
+  const channel =
+    channelRaw === "email" || channelRaw === "whatsapp" ? channelRaw : null;
   return {
     sid: String(r.sid ?? ""),
     timestamp: Number.isFinite(ts) ? ts : Date.now(),
     from: String(r.from ?? ""),
-    body: String(r.body ?? ""),
+    body: normalizeMessageBody(r.body ?? "", {
+      channel: channel ?? "manual",
+    }),
     kind,
     suggestedInvoiceId:
       typeof r.suggestedInvoiceId === "string" && r.suggestedInvoiceId
@@ -327,9 +345,10 @@ export async function sendInvoiceRemote(
 }
 
 export async function classifyReplyRemote(invoiceId: string, replyText: string): Promise<StepResult> {
+  const cleaned = normalizeMessageBody(replyText, { channel: "manual" });
   const body = await n8nFetch("/dunnly/invoices/classify", {
     method: "POST",
-    body: { invoiceId, replyText, source: "manual" },
+    body: { invoiceId, replyText: cleaned, source: "manual" },
   });
   return toStepResult(body);
 }

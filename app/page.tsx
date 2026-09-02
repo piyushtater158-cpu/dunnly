@@ -61,6 +61,58 @@ function cadenceStatusLine(v: Invoice): string {
   return "CADENCE —";
 }
 
+function replyChannelLabel(channel: Invoice["replyChannel"]): string {
+  if (channel === "email") return "EMAIL";
+  if (channel === "whatsapp") return "WHATSAPP";
+  if (channel === "manual") return "MANUAL";
+  return "INBOUND";
+}
+
+function ProseBody({ text, style }: { text: string; style?: React.CSSProperties }) {
+  return (
+    <div className="dunnly-prose" style={{ fontSize: 13, color: "#33312c", ...style }}>
+      {text}
+    </div>
+  );
+}
+
+function InboundBody({ body }: { body: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const display = body || "(empty)";
+  const lines = display.split("\n");
+  const long = display !== "(empty)" && (lines.length > 3 || display.length > 220);
+  const preview =
+    long && !expanded
+      ? lines.slice(0, 3).join("\n") + (lines.length > 3 || display.length > 220 ? "…" : "")
+      : display;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <ProseBody text={preview} style={{ fontSize: 12.5 }} />
+      {long && (
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          style={{
+            alignSelf: "flex-start",
+            border: 0,
+            background: "transparent",
+            padding: 0,
+            fontSize: 10.5,
+            letterSpacing: "0.08em",
+            fontWeight: 700,
+            color: "#55524a",
+            cursor: "pointer",
+            textDecoration: "underline",
+          }}
+        >
+          {expanded ? "SHOW LESS" : "SHOW MORE"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 const TAB_DEFS: { key: TabKey; label: string; test: (v: Invoice) => boolean }[] = [
   { key: "action", label: "NEEDS REVIEW", test: needsReview },
   { key: "flight", label: "IN FLIGHT", test: inFlight },
@@ -671,9 +723,7 @@ export default function PipelineDashboard() {
                   {ev.kind.toUpperCase()}
                   {ev.channel ? " · " + ev.channel.toUpperCase() : ""} · {ev.from} · {ago(ev.timestamp)}
                 </div>
-                <div style={{ fontSize: 12.5, lineHeight: 1.5 }}>
-                  {ev.body || "(empty)"}
-                </div>
+                <InboundBody body={ev.body} />
                 <div style={{ fontSize: 11, color: "#55524a" }}>
                   {ev.suggestedInvoiceId
                     ? "suggested · " + ev.suggestedInvoiceId
@@ -1174,11 +1224,65 @@ export default function PipelineDashboard() {
                     </div>
                     {v.replyText != null && (
                       <div style={{ borderTop: "1px dashed #d5d2c8", paddingTop: 9, display: "flex", flexDirection: "column", gap: 8 }}>
-                        <div style={{ fontSize: 12, lineHeight: 1.55, color: "#33312c" }}>
-                          &ldquo;
-                          {v.replyText === "" ? cadenceStatusLine(v) : v.replyText}
-                          &rdquo;
-                        </div>
+                        {v.replyText === "" ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            <div
+                              style={{
+                                fontSize: 10.5,
+                                letterSpacing: "0.1em",
+                                fontWeight: 700,
+                                color: "#55524a",
+                              }}
+                            >
+                              NO CUSTOMER TEXT
+                            </div>
+                            {(v.cadenceState === "active" || v.cadenceState === "paused") && (
+                              <span
+                                style={{
+                                  alignSelf: "flex-start",
+                                  fontSize: 10,
+                                  letterSpacing: "0.1em",
+                                  fontWeight: 700,
+                                  padding: "3px 7px",
+                                  border: "1px solid #b1ada1",
+                                  background: "transparent",
+                                  color: "#55524a",
+                                }}
+                              >
+                                {cadenceStatusLine(v)}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <span
+                                style={{
+                                  fontSize: 10.5,
+                                  letterSpacing: "0.1em",
+                                  fontWeight: 700,
+                                  color: "#33312c",
+                                }}
+                              >
+                                CUSTOMER REPLY
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  letterSpacing: "0.1em",
+                                  fontWeight: 700,
+                                  padding: "3px 7px",
+                                  border: "1px solid #b1ada1",
+                                  background: "#f2f1ec",
+                                  color: "#55524a",
+                                }}
+                              >
+                                {replyChannelLabel(v.replyChannel)}
+                              </span>
+                            </div>
+                            <ProseBody text={v.replyText} />
+                          </div>
+                        )}
                         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 10.5, letterSpacing: "0.08em" }}>
                           <span style={{ fontWeight: 700, padding: "3px 7px", border: "1px solid " + c.border, background: c.bg, color: c.fg }}>
                             CLASSIFIED · {c.label}
